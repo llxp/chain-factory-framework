@@ -1,12 +1,12 @@
-from src.task_queue.models.mongo.task import Task
-from src.task_queue.wrapper.redis_client import RedisClient
-from src.task_queue.wrapper.mongodb_client import MongoDBClient
+from chain_factory.task_queue.models.mongo.task import Task
+from chain_factory.task_queue.wrapper.redis_client import RedisClient
+from chain_factory.task_queue.wrapper.mongodb_client import MongoDBClient
 import time
 import os
 
 import hvac
 
-from src.task_queue.task_queue import TaskQueue
+from chain_factory.task_queue.task_queue import TaskQueue
 
 from workflows.get_users_workflow import GetUsersWorkflow
 # from workflows.workspace_one import WorkspaceOne
