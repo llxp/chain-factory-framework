@@ -28,20 +28,21 @@ logging.basicConfig(
 # the current node name. Should be later changed to an environment variable
 node_name = os.getenv('HOSTNAME', 'hostname1234')
 # the amqp endpoint. Should later be changed to an environment variable
-amqp_hostname = os.getenv('RABBITMQ_HOST', '192.168.6.1')
+amqp_hostname = os.getenv('RABBITMQ_HOST', '192.168.2.119')
 # the redis endpoint. Should later be changed to an environment variable
-redis_hostname = os.getenv('REDIS_HOST', '192.168.6.1')
+redis_hostname = os.getenv('REDIS_HOST', '192.168.2.119')
 # the amqp username ==> guest is the default
 amqp_username = os.getenv('RABBITMQ_USER', 'guest')
 # the amqp passwort ==> guest is the default
 amqp_password = os.getenv('RABBITMQ_PASSWORD', 'guest')
 mongodb_uri = os.getenv(
     'MONGODB_CONNECTION_URI',
-    'mongodb://root:example@192.168.6.1/orchestrator_db?authSource=admin'
+    'mongodb://root:example@192.168.2.119/orchestrator_db?authSource=admin'
 )
-ldap_host = os.getenv('LDAP_HOST', '192.168.6.1')
-ldap_username = 'Administrator@ad.local'
-ldap_password = 'Start123!'
+ldap_host = os.getenv('LDAP_HOST', '192.168.2.119')
+ldap_username = 'Administrator@ad.lan'
+ldap_password = 'Start123'
+print(amqp_hostname)
 # number of connections to use for the TaskQueue.
 # Currently work in progress
 # and not fully working as intended.
