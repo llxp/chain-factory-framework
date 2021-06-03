@@ -8,7 +8,23 @@ from .wait_handler import WaitHandler
 from .blocked_handler import BlockedHandler
 from .cluster_heartbeat import ClusterHeartbeat
 from .wrapper.redis_client import RedisClient
-from .common.settings import unique_hostnames, force_register
+from .common.settings import \
+    unique_hostnames, \
+    force_register, \
+    worker_count as default_worker_count, \
+    redis_host as default_redis_host, \
+    redis_password as default_redis_password, \
+    redis_port as default_redis_port, \
+    redis_db as default_redis_db, \
+    mongodb_connection as default_mongodb_connection, \
+    amqp_username as default_amqp_username, \
+    amqp_password as default_amqp_password, \
+    amqp_host as default_amqp_host, \
+    task_queue as default_task_queue, \
+    wait_queue as default_wait_queue, \
+    incoming_blocked_queue as default_incoming_blocked_queue, \
+    wait_blocked_queue as default_wait_blocked_queue
+from .common.generate_random_id import generate_random_id
 from .models.mongo.registered_task import RegisteredTask
 from .models.mongo.node_tasks import NodeTasks
 from .models.mongo.task import Task
@@ -16,36 +32,76 @@ from .wrapper.mongodb_client import MongoDBClient
 
 
 class TaskQueue():
-    def __init__(
-        self,
-        node_name: str,
-        worker_count: int,
-        amqp_host: str,
-        task_queue: str,
-        wait_queue: str,
-        incoming_blocked_queue: str,
-        wait_blocked_queue: str,
-        amqp_username: str,
-        amqp_password: str,
-        redis_client: RedisClient,
-        mongodb_client: MongoDBClient
-    ):
-        self.node_name = node_name
-        self.worker_count = worker_count
+    """
+    - Initialises the framework
+    - Connects to redis, mongodb and the rabbitmq queue broker
+    """
+    # def __init__(
+    #     self,
+    #     node_name: str,  # name/identifier of the current node, used to route tasks to the current node
+    #     worker_count: int,  # number of threads to use to listen for incoming tasks. Also equals the number of parallel tasks to work on on the same worker node
+    #     amqp_host: str,  # host to connect to for amqp
+    #     task_queue: str,  # name to use for the task queue
+    #     wait_queue: str,  # name to use for the wait queue
+    #     incoming_blocked_queue: str,  # name to use for the incoming blocked queue
+    #     wait_blocked_queue: str,  # name to use for the blocked queue
+    #     amqp_username: str,
+    #     amqp_password: str,
+    #     redis_client: RedisClient,
+    #     mongodb_client: MongoDBClient
+    # ):
+    #     self.node_name = node_name
+    #     self.worker_count = worker_count
 
-        self.redis_client = redis_client
-        self.mongodb_client = mongodb_client
+    #     self.redis_client = redis_client
+    #     self.mongodb_client = mongodb_client
 
-        self.amqp_host = amqp_host
+    #     self.amqp_host = amqp_host
 
-        self.task_queue = task_queue
-        self.wait_queue = wait_queue
-        self.incoming_blocked_queue = incoming_blocked_queue
-        self.wait_blocked_queue = wait_blocked_queue
+    #     self.task_queue = task_queue
+    #     self.wait_queue = wait_queue
+    #     self.incoming_blocked_queue = incoming_blocked_queue
+    #     self.wait_blocked_queue = wait_blocked_queue
 
-        self._start_handlers(amqp_username, amqp_password)
+    #     self._init_handlers(amqp_username, amqp_password)
+    def __init__(self):
+        self.node_name = generate_random_id()
+        self.worker_count = default_worker_count
+        self.redis_host = default_redis_host
+        self.redis_port = default_redis_port
+        self.redis_db = default_redis_db
+        self.redis_password = default_redis_password
+        self.mongodb_connection: str = default_mongodb_connection
+        self.amqp_username: str = default_amqp_username
+        self.amqp_password: str = default_amqp_password
+        self.amqp_host = default_amqp_host
+        self.task_handler = TaskHandler()
+        self.task_queue = default_task_queue
+        self.wait_queue = default_wait_queue
+        self.incoming_blocked_queue = default_incoming_blocked_queue
+        self.wait_blocked_queue = default_wait_blocked_queue
 
-    def _start_handlers(self, amqp_username: str, amqp_password: str):
+    def init(self):
+        self._init_clients()
+        self._init_handlers()
+
+    def _init_redis(self):
+        return RedisClient(
+            self.redis_host,
+            self.redis_password,
+            self.redis_port,
+            self.redis_db
+        )
+
+    def _init_mongodb(self):
+        return MongoDBClient(self.mongodb_connection)
+
+    def _init_clients(self):
+        print(self.mongodb_connection)
+        self.redis_client = self._init_redis()
+        self.mongodb_client = self._init_mongodb()
+
+    def _init_handlers(self):
         """
         Init all handlers
         -> wait handler
@@ -54,10 +110,10 @@ class TaskQueue():
         -> task handler
         -> cluster heartbeat
         """
-        self._init_wait_handler(amqp_username, amqp_password)
-        self._init_incoming_blocked_handler(amqp_username, amqp_password)
-        self._init_wait_blocked_handler(amqp_username, amqp_password)
-        self._init_task_handler(amqp_username, amqp_password)
+        self._init_wait_handler()
+        self._init_incoming_blocked_handler()
+        self._init_wait_blocked_handler()
+        self._init_task_handler()
         self.init_cluster_heartbeat()
 
     def task(self, name: str = ''):
@@ -159,26 +215,22 @@ class TaskQueue():
             dict(json.loads(node_tasks.to_json()))
         )
 
-    def _init_wait_handler(self, amqp_username: str, amqp_password: str):
+    def _init_wait_handler(self):
         """
         Start the wait handler queue listener
         """
         self.wait_thread = WaitHandler(
             node_name=self.node_name,
             amqp_host=self.amqp_host,
-            amqp_username=amqp_username,
-            amqp_password=amqp_password,
+            amqp_username=self.amqp_username,
+            amqp_password=self.amqp_password,
             redis_client=self.redis_client,
             queue_name=self.task_queue,
             wait_queue_name=self.wait_queue,
             blocked_queue_name=self.wait_blocked_queue
         )
 
-    def _init_incoming_blocked_handler(
-        self,
-        amqp_username: str,
-        amqp_password: str
-    ):
+    def _init_incoming_blocked_handler(self):
         """
         Init the blocked queue for all blocked tasks,
         which are blocked before even getting to the actual processing
@@ -189,40 +241,36 @@ class TaskQueue():
         self.incoming_blocked_handler = BlockedHandler(
             node_name=self.node_name,
             amqp_host=self.amqp_host,
-            amqp_username=amqp_username,
-            amqp_password=amqp_password,
+            amqp_username=self.amqp_username,
+            amqp_password=self.amqp_password,
             redis_client=self.redis_client,
             task_queue_name=self.task_queue,
             blocked_queue_name=self.incoming_blocked_queue
         )
 
-    def _init_wait_blocked_handler(
-        self,
-        amqp_username: str,
-        amqp_password: str
-    ):
+    def _init_wait_blocked_handler(self):
         """
         Init the blocked queue listener for all waiting tasks (failed, etc.)
         """
         self.wait_blocked_handler = BlockedHandler(
             node_name=self.node_name,
             amqp_host=self.amqp_host,
-            amqp_username=amqp_username,
-            amqp_password=amqp_password,
+            amqp_username=self.amqp_username,
+            amqp_password=self.amqp_password,
             redis_client=self.redis_client,
             task_queue_name=self.wait_queue,
             blocked_queue_name=self.wait_blocked_queue
         )
 
-    def _init_task_handler(self, amqp_username: str, amqp_password: str):
+    def _init_task_handler(self):
         """
         Init the actual task queue listener
         """
-        self.task_handler = TaskHandler(
+        self.task_handler.init(
             node_name=self.node_name,
             amqp_host=self.amqp_host,
-            amqp_username=amqp_username,
-            amqp_password=amqp_password,
+            amqp_username=self.amqp_username,
+            amqp_password=self.amqp_password,
             redis_client=self.redis_client,
             queue_name=self.task_queue,
             wait_queue_name=self.wait_queue,
@@ -249,8 +297,10 @@ class TaskQueue():
 
     def listen(self):
         """
-        Start listening on all queues
+        Initialises the queue and starts listening
         """
+        self.init()
+        self.task_handler.task_set_redis_client()
         self._register_tasks()
         print(self.worker_count)
         self.task_handler.scale(self.worker_count)

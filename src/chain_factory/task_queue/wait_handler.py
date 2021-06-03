@@ -9,7 +9,9 @@ from .wrapper.redis_client import RedisClient
 from .models.mongo.task import Task
 from .list_handler import ListHandler
 from .queue_handler import QueueHandler
-from .common.settings import max_task_age_wait_queue, wait_time
+from .common.settings import \
+    max_task_age_wait_queue, wait_time, \
+    wait_block_list_redis_key
 
 LOGGER = logging.getLogger(__name__)
 
@@ -26,7 +28,8 @@ class WaitHandler(QueueHandler):
         amqp_password: str,
         redis_client: RedisClient
     ):
-        QueueHandler.__init__(
+        QueueHandler.__init__(self)
+        QueueHandler.init(
             self,
             amqp_host,
             wait_queue_name,
@@ -55,7 +58,7 @@ class WaitHandler(QueueHandler):
             ssl_options=None
         )
         self.block_list = ListHandler(
-            list_name='wait_block_list',
+            list_name=wait_block_list_redis_key,
             redis_client=redis_client
         )
 

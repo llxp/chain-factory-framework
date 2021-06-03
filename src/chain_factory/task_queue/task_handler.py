@@ -33,7 +33,13 @@ LOGGER = logging.getLogger(__name__)
 
 
 class TaskHandler(QueueHandler):
-    def __init__(
+    def __init__(self):
+        QueueHandler.__init__(self)
+        self.ack_lock = Lock()
+        self.registered_tasks: Dict[str, TaskRunner] = {}
+        self.redis_client = None
+
+    def init(
         self,
         node_name: str,
         amqp_host: str,
@@ -45,30 +51,24 @@ class TaskHandler(QueueHandler):
         wait_queue_name: str,
         blocked_queue_name: str
     ):
-        QueueHandler.__init__(
+        QueueHandler.init(
             self,
             amqp_host,
             queue_name,
             amqp_username,
             amqp_password
         )
-        self.ack_lock = Lock()
-
         self.node_name: str = node_name
         self.redis_client: RedisClient = redis_client
         self.mongo_client: MongoDBClient = mongodb_client
-
         self.wait_queue_name: str = wait_queue_name
         self.blocked_queue_name: str = blocked_queue_name
-
-        self.registered_tasks: Dict[str, TaskRunner] = {}
 
         self._init_amqp_publishers(
             amqp_host=amqp_host,
             amqp_username=amqp_username,
             amqp_password=amqp_password
         )
-
         self.block_list = ListHandler(
             list_name=incoming_block_list_redis_key,
             redis_client=redis_client
@@ -119,7 +119,7 @@ class TaskHandler(QueueHandler):
 
     def _check_blocklist(self, task: Task, message: Message) -> bool:
         """
-        Check the redis blocklist for the hostname and task
+        Check the redis blocklist for the node name and task
         """
         blocklist = self.block_list.get()
         if blocklist is None or blocklist.list_items is None:
@@ -223,11 +223,13 @@ class TaskHandler(QueueHandler):
             log_buffer
         )
 
+    TaskReturnType = Union[
+        None, str, Task, bool, Callable[..., 'TaskReturnType']
+    ]
+
     def _new_task_from_result(
         self,
-        task_result: Union[
-            None, str, Task, bool, Callable[..., 'TaskReturnType']
-        ],
+        task_result: TaskReturnType,
         new_arguments: Dict[str, str]
     ) -> Task:
         # check, if result is a string ==> task name
@@ -460,11 +462,17 @@ class TaskHandler(QueueHandler):
         """
         Register a new task/task function
         """
-        self.registered_tasks[name] = TaskRunner(
+        task = TaskRunner(
             name,
-            callback,
-            self.redis_client
+            callback
         )
+        task.set_redis_client(self.redis_client)
+        self.registered_tasks[name] = task
+
+    def task_set_redis_client(self):
+        for task_name in self.registered_tasks:
+            task: TaskRunner = self.registered_tasks[task_name]
+            task.set_redis_client(self.redis_client)
 
     def scale(self, worker_count: int = 1):
         """

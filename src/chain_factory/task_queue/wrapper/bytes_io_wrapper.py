@@ -2,7 +2,7 @@ import io
 import sys
 import re
 from typing import Optional, Union
-from ..common.settings import task_log_to_stdout
+from ..common.settings import task_log_to_stdout, task_log_to_external
 from pymongo.collection import Collection
 from .mongodb_client import Database
 from ..models.mongo.task_log import TaskLog
@@ -25,8 +25,9 @@ class BytesIOWrapper(io.BytesIO):
         decoded_log_line = self.remove_secrets(decoded_log_line)
         task_log = TaskLog(task_id=self.task_id, log_line=decoded_log_line)
         logs_table: Collection = self.mongodb_database.logs
-        # dataclass to json and parse to dict
-        logs_table.insert_one(json.loads(task_log.to_json()))
+        if task_log_to_external:
+            # dataclass to json and parse to dict
+            logs_table.insert_one(json.loads(task_log.to_json()))
         return super().write(b)
 
     def remove_secrets(self, string: str) -> str:

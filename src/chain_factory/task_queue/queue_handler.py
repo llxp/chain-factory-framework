@@ -17,6 +17,11 @@ LOGGER = logging.getLogger(__name__)
 
 class QueueHandler():
     def __init__(
+        self
+    ):
+        pass
+
+    def init(
         self,
         amqp_host: str,
         queue_name: str,

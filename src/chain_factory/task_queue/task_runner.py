@@ -151,13 +151,14 @@ class TaskRunner():
         callback: Callable[
             ...,
             TaskReturnType
-        ],
-        redis_client: RedisClient
+        ]
     ):
         self.callback: Callable[..., Task] = callback
         self.name: str = name
-        self.redis_client = redis_client
         self.task_threads: Dict[str, TaskThread] = {}
+
+    def set_redis_client(self, redis_client: RedisClient):
+        self.redis_client = redis_client
 
     def run(
         self,

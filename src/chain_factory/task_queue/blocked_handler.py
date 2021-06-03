@@ -25,7 +25,8 @@ class BlockedHandler(QueueHandler):
         amqp_username: str = 'guest',
         amqp_password: str = 'guest',
     ):
-        QueueHandler.__init__(
+        QueueHandler.__init__(self)
+        QueueHandler.init(
             self,
             amqp_host,
             blocked_queue_name,
@@ -44,7 +45,7 @@ class BlockedHandler(QueueHandler):
             ssl_options=None
         )
         self.block_list = ListHandler(
-            list_name='incoming_block_list',
+            list_name=blocked_queue_name,
             redis_client=redis_client
         )
 
