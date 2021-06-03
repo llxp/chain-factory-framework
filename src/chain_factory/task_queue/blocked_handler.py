@@ -15,6 +15,11 @@ utc = pytz.UTC
 
 
 class BlockedHandler(QueueHandler):
+    """
+    Checks, if the task is still on the blocklist and sends them back
+    -> to the blocked queue if still on the blocklist
+    -> or to the task queue if not on the blocklit anymore
+    """
     def __init__(
         self,
         node_name: str,
@@ -50,6 +55,11 @@ class BlockedHandler(QueueHandler):
         )
 
     def _check_blocklist(self, task: Task, message: Message) -> bool:
+        """
+        Checks, if the task is still on the blocklist and sends them back
+        -> to the blocked queue if still on the blocklist
+        -> or to the task queue if not on the blocklit anymore
+        """
         task_name = task.name
         blocklist = self.block_list.get()
         if (

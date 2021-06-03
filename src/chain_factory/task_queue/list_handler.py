@@ -7,6 +7,9 @@ from .decorators.parse_catcher import parse_catcher
 
 
 class ListHandler():
+    """
+    Wrapper class to manage a list in redis in form of a json document
+    """
     def __init__(
         self,
         list_name: str,
@@ -76,7 +79,7 @@ class ListHandler():
 
     def remove(self, list_item: ListItem) -> bool:
         """
-        Remove an entry from the redis list
+        Remove an entry from the list
         """
         if self.redis_client is not None:
             current_list: List[ListItem] = self.get()
@@ -96,7 +99,7 @@ class ListHandler():
 
     def get(self) -> ListItemContainer:
         """
-        get an entry from the redis list
+        get the list
         """
         if self.redis_client is not None:
             content = self.redis_client.get(self.list_name)

@@ -32,7 +32,7 @@ class TaskThread(InterruptableThread):
     """
     The thread which actually runs the task
     the output of stdio will be redirected to a buffer
-    and later uploaded to the redis database
+    and later uploaded to the mongodb database
     """
     def __init__(self, callback, arguments, buffer):
         InterruptableThread.__init__(self)

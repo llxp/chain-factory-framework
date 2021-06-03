@@ -8,6 +8,7 @@ from .wait_handler import WaitHandler
 from .blocked_handler import BlockedHandler
 from .cluster_heartbeat import ClusterHeartbeat
 from .wrapper.redis_client import RedisClient
+# import the settings
 from .common.settings import \
     unique_hostnames, \
     force_register, \
@@ -36,35 +37,10 @@ class TaskQueue():
     - Initialises the framework
     - Connects to redis, mongodb and the rabbitmq queue broker
     """
-    # def __init__(
-    #     self,
-    #     node_name: str,  # name/identifier of the current node, used to route tasks to the current node
-    #     worker_count: int,  # number of threads to use to listen for incoming tasks. Also equals the number of parallel tasks to work on on the same worker node
-    #     amqp_host: str,  # host to connect to for amqp
-    #     task_queue: str,  # name to use for the task queue
-    #     wait_queue: str,  # name to use for the wait queue
-    #     incoming_blocked_queue: str,  # name to use for the incoming blocked queue
-    #     wait_blocked_queue: str,  # name to use for the blocked queue
-    #     amqp_username: str,
-    #     amqp_password: str,
-    #     redis_client: RedisClient,
-    #     mongodb_client: MongoDBClient
-    # ):
-    #     self.node_name = node_name
-    #     self.worker_count = worker_count
-
-    #     self.redis_client = redis_client
-    #     self.mongodb_client = mongodb_client
-
-    #     self.amqp_host = amqp_host
-
-    #     self.task_queue = task_queue
-    #     self.wait_queue = wait_queue
-    #     self.incoming_blocked_queue = incoming_blocked_queue
-    #     self.wait_blocked_queue = wait_blocked_queue
-
-    #     self._init_handlers(amqp_username, amqp_password)
     def __init__(self):
+        """
+        Initialises the properties using the default values from the settings
+        """
         self.node_name = generate_random_id()
         self.worker_count = default_worker_count
         self.redis_host = default_redis_host
@@ -82,10 +58,17 @@ class TaskQueue():
         self.wait_blocked_queue = default_wait_blocked_queue
 
     def init(self):
+        """
+        - initialises the redis and mongodb clients
+        - initialises the queue handlers
+        """
         self._init_clients()
         self._init_handlers()
 
     def _init_redis(self):
+        """
+        returns a new redis client object
+        """
         return RedisClient(
             self.redis_host,
             self.redis_password,
@@ -94,10 +77,16 @@ class TaskQueue():
         )
 
     def _init_mongodb(self):
+        """
+        returns a new mongodb client object
+        """
         return MongoDBClient(self.mongodb_connection)
 
     def _init_clients(self):
-        print(self.mongodb_connection)
+        """
+        - initialises the redis client
+        - initialises the mongodb client
+        """
         self.redis_client = self._init_redis()
         self.mongodb_client = self._init_mongodb()
 
@@ -234,9 +223,9 @@ class TaskQueue():
         """
         Init the blocked queue for all blocked tasks,
         which are blocked before even getting to the actual processing
-        --> Blacklist/Blocklist
-        --> Node is set to not respond to any task
-        --> Node is in standby mode
+        --> If task is on Blacklist/Blocklist
+        --> Node is set to not respond to any of those tasks
+        --> Node is in standby mode for those tasks
         """
         self.incoming_blocked_handler = BlockedHandler(
             node_name=self.node_name,
@@ -302,7 +291,6 @@ class TaskQueue():
         self.init()
         self.task_handler.task_set_redis_client()
         self._register_tasks()
-        print(self.worker_count)
         self.task_handler.scale(self.worker_count)
         self.cluster_heartbeat.start_heartbeat()
         print('listening')

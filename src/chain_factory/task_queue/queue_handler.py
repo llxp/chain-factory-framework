@@ -28,6 +28,9 @@ class QueueHandler():
         amqp_username: str,
         amqp_password: str
     ):
+        """
+        Separate init logic to be able to use lazy initialisation
+        """
         self.queue_name = queue_name
         self._connect(
             amqp_host=amqp_host,
@@ -36,6 +39,9 @@ class QueueHandler():
         )
 
     def _connect(self, amqp_host: str, amqp_username: str, amqp_password: str):
+        """
+        Connects to amqp
+        """
         try:
             self.amqp: AMQP = AMQP(
                 host=amqp_host,
@@ -53,6 +59,9 @@ class QueueHandler():
             sys.exit(1)
 
     def listen(self):
+        """
+        starts listening on the queue
+        """
         self.amqp.listen()
 
     def reschedule(self, message: Message):
@@ -63,6 +72,9 @@ class QueueHandler():
 
     @staticmethod
     def _now():
+        """
+        returns the current time with timezone
+        """
         return datetime.now(pytz.UTC)
 
     @staticmethod
@@ -87,6 +99,10 @@ class QueueHandler():
 
     @abc.abstractmethod
     def on_task(self, task: Task, message: Message) -> Union[None, Task]:
+        """
+        abstract method for the overriding clas,
+        will be invoked, when a new task comes in
+        """
         LOGGER.error(
             'Error: on_task on queue_handler has been called. '
             'Please implement the on_task method '
@@ -99,6 +115,9 @@ class QueueHandler():
         )
 
     def _on_message(self, message: Message) -> str:
+        """
+        method will be invoked by the amqp library, when a new message comes in
+        """
         LOGGER.debug('callback_impl in queue_handler called')
         # parse the message body to Task
         task: Task = self._parse_json(body=message.body)
@@ -118,6 +137,11 @@ class QueueHandler():
             return None
 
     def _on_task(self, task: Task, message: Message) -> str:
+        """
+        method will be invoked by _on_message, when a new task comes in
+        checks the return value
+        and returns them after logging to the amqp library
+        """
         LOGGER.debug('on_task will be called')
         result: Task = self.on_task(task, message)
         if result is not None:
@@ -129,5 +153,9 @@ class QueueHandler():
             return ''
 
     def _on_task_error(self, message: Message) -> str:
+        """
+        will be invoked,
+        when an error occured during parsing the message to a task
+        """
         LOGGER.error('Error, message is not parsable. Body: %s' % message.body)
         return ''

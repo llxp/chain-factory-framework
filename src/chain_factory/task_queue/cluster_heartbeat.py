@@ -19,13 +19,24 @@ class ClusterHeartbeat():
         self.heartbeat_running = False
 
     def start_heartbeat(self):
+        """
+        starts the heartbeat thread
+        """
         self.heartbeat_running = True
         start_new_thread(self.heartbeat_thread, ())
 
     def stop_heartbeat(self):
+        """
+        stops the heartbeat thread
+        """
         self.heartbeat_running = False
 
     def heartbeat_thread(self):
+        """
+        updates a key in redis to show the current uptime of the node
+        and waits a specified amount of time
+        repeats as long as the node is running
+        """
         while self.heartbeat_running:
             current_timestamp: datetime = datetime.now(pytz.UTC)
             redis_key = heartbeat_redis_key + '_' + self.node_name
