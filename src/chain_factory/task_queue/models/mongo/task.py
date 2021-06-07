@@ -61,7 +61,10 @@ class Task():
     node_names: List[str] = field(default_factory=lambda: [])
     # tags to be associated with the new task.
     # Used to query for the workflow logs
-    tags: List[str] = field(default_factory=lambda: [], metadata=config(decoder=from_none_array, encoder=to_none_array))
+    tags: List[str] = field(
+        default_factory=lambda: [],
+        metadata=config(decoder=from_none_array, encoder=to_none_array)
+    )
     # not required, should be omitted, when starting a new taks
     reject_counter: int = 0
     # planned date for timed tasks, can be ommited (optional)

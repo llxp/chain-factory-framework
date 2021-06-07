@@ -1,4 +1,4 @@
-from typing import Dict, Tuple, Union, Callable, List
+from typing import Dict, Union, Callable, List
 from datetime import datetime
 import time
 import logging
@@ -21,6 +21,8 @@ from .common.settings import wait_time, workflow_status_redis_key
 from .common.settings import incoming_block_list_redis_key
 # common
 from .common.generate_random_id import generate_random_id
+from .common.task_return_type import \
+    TaskReturnType, TaskRunnerReturnType
 # models
 from .models.mongo.task import Task
 from .models.mongo.workflow import Workflow
@@ -171,6 +173,7 @@ class TaskHandler(QueueHandler):
     ):
         if arguments and 'exclude' in arguments:
             excluded_arguments = arguments['exclude']
+            print("Excluded arguments:")
             print(json.dumps(excluded_arguments))
             for argument in arguments_copy:
                 for excluded_argument in excluded_arguments:
@@ -203,29 +206,15 @@ class TaskHandler(QueueHandler):
         self,
         task: Task,
         task_id: str
-    ) -> Union[
-        None,
-        str, Task, bool,
-        Tuple[
-            Union[str, Task, bool],
-            Dict[str, str]
-        ]
-    ]:
+    ) -> TaskRunnerReturnType:
         """
         Runs the specified task and returns the result of the task function
         """
-        # buffer to redirect stdout/stderr to the redis database
+        # buffer to redirect stdout/stderr to the database
         log_buffer = BytesIOWrapper(task_id, self.mongo_client.db())
         # run the task
         return self.registered_tasks[task.name].run(
-            task.arguments,
-            task.workflow_id,
-            log_buffer
-        )
-
-    TaskReturnType = Union[
-        None, str, Task, bool, Callable[..., 'TaskReturnType']
-    ]
+            task.arguments, task.workflow_id, log_buffer)
 
     def _new_task_from_result(
         self,
@@ -267,6 +256,9 @@ class TaskHandler(QueueHandler):
         task: Task,
         new_arguments: Dict[str, str]
     ) -> None:
+        """
+        Reenqueue the current task to the wait queue if the current task failed
+        """
         # update received date
         task.received_date = datetime.now(pytz.UTC)
         # accociate the current task with the next task
@@ -366,9 +358,17 @@ class TaskHandler(QueueHandler):
         - returns a function to handle the task result
         """
         task = self._prepare_task(task)
-        task_result, arguments = self._run_task(task, task.task_id)
-        # handle task result and return new Task or None
-        return self._handle_task_result(task_result, arguments, message, task)
+        task_runner_result = self._run_task(task, task.task_id)
+        if task_runner_result:
+            task_result, arguments = task_runner_result
+            # handle task result and return new Task
+            return self._handle_task_result(
+                task_result, arguments, message, task)
+        else:
+            # error occured converting the arguments from Dict[str, str]
+            # to Dict[str, Any] -> to the actual type expected from the task
+            print("An Error occured during the task run")
+            return None
 
     def _is_planned_task(self, task: Task):
         return task.planned_date
@@ -377,7 +377,9 @@ class TaskHandler(QueueHandler):
         """
         sends the task to the delayed queue with an ttl of planned_date - now
         """
-        pass
+        # not implemented yet
+        print('planning tasks is not implemented yet')
+        return None
 
     def _handle_task(self, task: Task, message: Message) -> Union[None, Task]:
         """

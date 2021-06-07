@@ -1,4 +1,4 @@
-from typing import Dict, Callable, Any, Union, Tuple
+from typing import Dict, Any, Union
 import json
 import logging
 import traceback
@@ -13,19 +13,12 @@ from .models.redis.task_control_message import TaskControlMessage
 from .wrapper.interruptable_thread import InterruptableThread
 from .wrapper.interruptable_thread import ThreadAbortException
 from .wrapper.redis_client import RedisClient
+from .common.task_return_type import \
+    ArgumentType, CallbackType, \
+    TaskRunnerReturnType, TaskReturnType, \
+    NormalizedTaskReturnType
 
 LOGGER = logging.getLogger(__name__)
-TaskReturnType = Union[
-    Union[
-        None, str, bool, Callable[..., 'TaskReturnType']
-    ],
-    Tuple[
-        Union[
-            None, str, bool, Callable[..., 'TaskReturnType']
-        ],
-        Dict[str, str]
-    ]
-]
 
 
 class TaskThread(InterruptableThread):
@@ -38,7 +31,7 @@ class TaskThread(InterruptableThread):
         InterruptableThread.__init__(self)
         self.callback = callback
         self.arguments = arguments
-        self.result: TaskReturnType = None
+        self.result: TaskRunnerReturnType = None
         # current task status
         # 0 means not run
         # 1 means started
@@ -148,12 +141,9 @@ class TaskRunner():
     def __init__(
         self,
         name: str,
-        callback: Callable[
-            ...,
-            TaskReturnType
-        ]
+        callback: CallbackType
     ):
-        self.callback: Callable[..., Task] = callback
+        self.callback: CallbackType = callback
         self.name: str = name
         self.task_threads: Dict[str, TaskThread] = {}
 
@@ -165,12 +155,7 @@ class TaskRunner():
         arguments: Dict[str, str],
         workflow_id: str,
         buffer: io.BytesIO
-    ) -> Tuple[
-        Union[
-            None, str, Task, bool, Callable[..., 'TaskReturnType']
-        ],
-        Dict[str, str]
-    ]:
+    ) -> TaskRunnerReturnType:
         try:
             LOGGER.debug(
                 'running task function %s '
@@ -244,12 +229,7 @@ class TaskRunner():
     def _parse_task_output(
         task_result: TaskReturnType,
         arguments: Dict[str, str]
-    ) -> Tuple[
-        Union[
-            None, str, Task, bool, Callable[..., 'TaskReturnType']
-        ],
-        Dict[str, str]
-    ]:
+    ) -> NormalizedTaskReturnType:
         """
         Check, if new parameters have been returned,
         to be able to reschedule the same task with changed parameters
@@ -278,7 +258,7 @@ class TaskRunner():
             task_result = task_result[0]
         return task_result, arguments
 
-    def convert_arguments(self, arguments: Dict[str, str]) -> Dict[str, Any]:
+    def convert_arguments(self, arguments: ArgumentType) -> Dict[str, Any]:
         callback_arguments = list(self.callback.__code__.co_varnames)
         callback_types = self.callback.__annotations__
         for argument in arguments:
