@@ -24,7 +24,9 @@ from .common.settings import \
     task_queue as default_task_queue, \
     wait_queue as default_wait_queue, \
     incoming_blocked_queue as default_incoming_blocked_queue, \
-    wait_blocked_queue as default_wait_blocked_queue
+    wait_blocked_queue as default_wait_blocked_queue, \
+    incoming_block_list_redis_key as default_incoming_block_list_redis_key, \
+    wait_block_list_redis_key as default_wait_block_list_redis_key
 from .common.generate_random_id import generate_random_id
 from .models.mongo.registered_task import RegisteredTask
 from .models.mongo.node_tasks import NodeTasks
@@ -56,6 +58,10 @@ class TaskQueue():
         self.wait_queue = default_wait_queue
         self.incoming_blocked_queue = default_incoming_blocked_queue
         self.wait_blocked_queue = default_wait_blocked_queue
+        self.incoming_block_list_redis_key = \
+            default_incoming_block_list_redis_key
+        self.wait_block_list_redis_key = \
+            default_wait_block_list_redis_key
 
     def init(self):
         """
@@ -234,7 +240,8 @@ class TaskQueue():
             amqp_password=self.amqp_password,
             redis_client=self.redis_client,
             task_queue_name=self.task_queue,
-            blocked_queue_name=self.incoming_blocked_queue
+            blocked_queue_name=self.incoming_blocked_queue,
+            block_list_name=self.incoming_block_list_redis_key
         )
 
     def _init_wait_blocked_handler(self):
@@ -248,7 +255,8 @@ class TaskQueue():
             amqp_password=self.amqp_password,
             redis_client=self.redis_client,
             task_queue_name=self.wait_queue,
-            blocked_queue_name=self.wait_blocked_queue
+            blocked_queue_name=self.wait_blocked_queue,
+            block_list_name=self.wait_block_list_redis_key
         )
 
     def _init_task_handler(self):
