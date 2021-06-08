@@ -6,7 +6,7 @@ LOGGER = logging.getLogger(__name__)
 
 def repeat(
     errors: Tuple[Exception] = (Exception, ),
-    return_value: Any = None,
+    on_error_return_value: Any = None,
     max_counter_value: int = 10
 ):
     def decorator(func):
@@ -20,8 +20,7 @@ def repeat(
                     # that the value is not visible
                     # in the actual decorated function
                     del kwargs['repeat_counter']
-                result = func(*args, **kwargs)
-                return result
+                return func(*args, **kwargs)
             except errors as e:
                 LOGGER.exception(e)
                 if counter >= 0:
@@ -31,7 +30,7 @@ def repeat(
                 else:
                     kwargs['repeat_counter'] = 0
                 if kwargs['repeat_counter'] >= 10:
-                    return return_value
+                    return on_error_return_value
                 return new_func(*args, **kwargs)
 
         return new_func

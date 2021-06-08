@@ -1,7 +1,7 @@
 import logging
 import traceback
 import sys
-from typing import Callable, List, Dict, Any
+from typing import Callable, List, Dict, Any, Union
 from ssl import SSLContext
 from _thread import start_new_thread, interrupt_main
 from dataclasses import dataclass
@@ -150,7 +150,7 @@ class AMQP():
         )
         if self.callback is not None:
             LOGGER.debug('invoking registered callback method')
-            #start_new_thread(self._start_callback_thread, (new_message, ))
+            # start_new_thread(self._start_callback_thread, (new_message, ))
             self._start_callback_thread(new_message)
 
     def _start_callback_thread(self, new_message: Message):
@@ -253,7 +253,7 @@ class AMQP():
         existing_consumer: _Consumer = self.consumer_list.pop(index)
         existing_consumer.close()
 
-    def send(self, message: str) -> [bool, None]:
+    def send(self, message: str) -> Union[bool, None]:
         """
         Publishes a new task on the queue
         """

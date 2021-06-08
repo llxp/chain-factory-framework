@@ -68,10 +68,10 @@ class RedisClient():
 
     @repeat((ConnectionError, TimeoutError, LockError), False, 10)
     def set(self, name: str, obj, lock_key: str = '_lock'):
-        #with self._connection.lock(name + lock_key, blocking_timeout=20):
+        # with self._connection.lock(name + lock_key, blocking_timeout=20):
         self._connection.set(name, obj)
         return True
-        #return False
+        # return False
 
     @repeat((ConnectionError, TimeoutError), None, 10)
     def get(self, name: str):

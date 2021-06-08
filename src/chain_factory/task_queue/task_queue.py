@@ -177,7 +177,7 @@ class TaskQueue():
 
     def _register_tasks(self):
         """
-        Registers all internally registered tasks in the redis database
+        Registers all internally registered tasks in the database
         in the form:
             node_name/task_name
         """
@@ -283,6 +283,7 @@ class TaskQueue():
         self.wait_thread.listen()
         self.incoming_blocked_handler.listen()
         self.wait_blocked_handler.listen()
+        self.task_handler.listen()
 
     def listen(self):
         """
@@ -295,4 +296,3 @@ class TaskQueue():
         self.cluster_heartbeat.start_heartbeat()
         print('listening')
         self._listen_handlers()
-        self.task_handler.listen()

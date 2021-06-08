@@ -6,7 +6,7 @@ from pymongo.database import Database
 class MongoDBClient():
     def __init__(
         self,
-        uri: str = 'mongodb://root:example@localhost/db?authSource=admin'
+        uri: str
     ):
         self.client = MongoClient(uri, serverSelectionTimeoutMS=5000)
         self._check_connection()

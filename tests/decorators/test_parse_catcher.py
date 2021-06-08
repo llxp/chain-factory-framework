@@ -1,5 +1,7 @@
 import unittest
-from src.task_queue.decorators.parse_catcher import parse_catcher
+import sys
+sys.path.append('C:\\Users\\F21987975ADM\\chain-factory\\framework\\src')
+from chain_factory.task_queue.decorators.parse_catcher import parse_catcher
 
 
 class ParseCatcherDecoratorTest(unittest.TestCase):
@@ -17,3 +19,7 @@ class ParseCatcherDecoratorTest(unittest.TestCase):
             assert False
             return
         assert True
+
+
+if __name__ == '__main__':
+    unittest.main()

@@ -13,7 +13,8 @@ def parse_catcher(errors=(Exception, )):
             except errors as e:
                 traceback.print_exc(file=sys.stdout)
                 # logger.error('Got error! ' % repr(e))
-                LOGGER.exception(e)
+                if len(LOGGER.handlers) > 0:
+                    LOGGER.exception(e)
                 return None
 
         return new_func

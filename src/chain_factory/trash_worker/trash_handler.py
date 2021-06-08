@@ -2,7 +2,7 @@ from ..task_queue.queue_handler import QueueHandler
 from amqpstorm import Message
 from typing import Union
 
-from ..task_queue.models.task import Task
+from ..task_queue.models.mongo.task import Task
 from ..task_queue.wrapper.redis_client import RedisClient
 
 
