@@ -323,8 +323,12 @@ class TaskHandler(QueueHandler):
                 self._mark_workflow_as_stopped(task.workflow_id)
                 return None  # do nothing
             else:
-                self._save_task_result(task.task_id, 'Task')
-                return self._return_new_task(task, arguments, task_result)
+                if task_result is Exception:
+                    self._save_task_result(task.task_id, 'Exception')
+                    return None
+                else:
+                    self._save_task_result(task.task_id, 'Task')
+                    return self._return_new_task(task, arguments, task_result)
         else:  # task_result is now False
             self._save_task_result(task.task_id, 'False')
             # the result is False, indicating an error
@@ -412,9 +416,9 @@ class TaskHandler(QueueHandler):
         requested_task = self._handle_rejected_increase_counter(requested_task)
         if requested_task.reject_counter > reject_limit:
             requested_task.reject_counter = 0
-            self._send_to_queue(self.amqp_wait, requested_task, message)
+            self._send_to_queue(self.amqp_wait, message, requested_task)
         else:
-            self._send_to_queue(self.amqp, requested_task, message)
+            self._send_to_queue(self.amqp, message, requested_task)
         return None
 
     def _check_node_filter(self, task: Task):

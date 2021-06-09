@@ -23,7 +23,7 @@ logging.basicConfig(
 task_queue = TaskQueue()
 host = '172.16.19.15'
 # the current node name. Should be later changed to an environment variable
-task_queue.node_name = os.getenv('HOSTNAME', 'hostname1234')
+task_queue.node_name = os.getenv('HOSTNAME', 'devnode01')
 # the amqp endpoint. Should later be changed to an environment variable
 task_queue.amqp_host = os.getenv('RABBITMQ_HOST', host)
 # the redis endpoint. Should later be changed to an environment variable
@@ -49,7 +49,8 @@ def test01(testvar01: int):
 
 @task_queue.task()
 def test02():
-    print('Test02')
+    print('Test02<s>SECRET</s>')
+    raise TypeError
     return 'test01', {'testvar01': '01'}
 
 

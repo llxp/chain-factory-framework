@@ -38,6 +38,9 @@ class QueueHandler():
             amqp_password=amqp_password
         )
 
+    def stop_listening(self):
+        self.amqp.close()
+
     def _connect(self, amqp_host: str, amqp_username: str, amqp_password: str):
         """
         Connects to amqp

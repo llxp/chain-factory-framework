@@ -3,7 +3,8 @@ import inspect
 import json
 
 from .task_handler import TaskHandler
-from .task_runner import TaskRunner
+from .task_runner import TaskRunner, ControlThread
+from .wrapper.interruptable_thread import ThreadAbortException
 from .wait_handler import WaitHandler
 from .blocked_handler import BlockedHandler
 from .cluster_heartbeat import ClusterHeartbeat
@@ -71,6 +72,11 @@ class TaskQueue():
         self._init_clients()
         self._init_handlers()
 
+    def stop_listening(self):
+        print('shutting down node')
+        self.task_handler.stop_listening()
+        self.wait_thread.stop_listening()
+
     def _init_redis(self):
         """
         returns a new redis client object
@@ -95,6 +101,22 @@ class TaskQueue():
         """
         self.redis_client = self._init_redis()
         self.mongodb_client = self._init_mongodb()
+
+    def _listen_control_messages(self):
+        try:
+            task_control_thread = ControlThread(
+                self.node_name,
+                self.stop_listening,
+                self.stop_listening,
+                self.redis_client,
+                'node_control_channel'
+            )
+            task_control_thread.start()
+            # task_control_thread.abort()
+        except ThreadAbortException:
+            task_control_thread.abort()
+        except KeyboardInterrupt:
+            task_control_thread.abort()
 
     def _init_handlers(self):
         """
@@ -263,6 +285,7 @@ class TaskQueue():
         """
         Init the actual task queue listener
         """
+        print(self.node_name)
         self.task_handler.init(
             node_name=self.node_name,
             amqp_host=self.amqp_host,
@@ -299,6 +322,7 @@ class TaskQueue():
         """
         self.init()
         self.task_handler.task_set_redis_client()
+        self._listen_control_messages()
         self._register_tasks()
         self.task_handler.scale(self.worker_count)
         self.cluster_heartbeat.start_heartbeat()

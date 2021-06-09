@@ -7,6 +7,7 @@ import time
 import stdio_proxy
 import io
 import threading
+import abc
 
 from .models.mongo.task import Task
 from .models.redis.task_control_message import TaskControlMessage
@@ -61,7 +62,8 @@ class TaskThread(InterruptableThread):
             except Exception as e:
                 LOGGER.exception(e)
                 traceback.print_exc(file=sys.stdout)
-                self.result = None
+                # TODO: implement self.result = Exception
+                self.result = Exception
                 self.status = 2
                 return
 
@@ -75,21 +77,34 @@ class TaskThread(InterruptableThread):
         super().abort()
 
 
-class TaskControlThread(InterruptableThread):
+class IStoppable:
+    @abc.abstractmethod
+    def stop(self):
+        pass
+
+    @abc.abstractmethod
+    def abort(self):
+        pass
+
+
+class ControlThread(InterruptableThread):
     def __init__(
         self,
         workflow_id: str,
-        task_thread: TaskThread,
-        redis_client: RedisClient
+        stop, abort,
+        redis_client: RedisClient,
+        control_channel: str
     ):
         InterruptableThread.__init__(self)
         self.workflow_id = workflow_id
-        self.task_thread = task_thread
+        self.stop_func = stop
+        self.abort_func = abort
         self.redis_client = redis_client
+        self.control_channel = control_channel
 
     def run(self):
         try:
-            self.redis_client.subscribe('task_control_channel')
+            self.redis_client.subscribe(self.control_channel)
             while True:
                 msg = self.redis_client.get_message()
                 if msg is not None:
@@ -124,15 +139,33 @@ class TaskControlThread(InterruptableThread):
                 parsed_data.workflow_id == self.workflow_id and
                 parsed_data.command == 'stop'
             ):
-                self.task_thread.stop()
+                self.stop_func()
                 return True
             if (
                 parsed_data.workflow_id == self.workflow_id and
                 parsed_data.command == 'abort'
             ):
-                self.task_thread.abort()
+                self.abort_func()
                 return True
         return False
+
+
+class TaskControlThread(ControlThread):
+    def __init__(
+        self,
+        workflow_id: str,
+        task_thread: TaskThread,
+        redis_client: RedisClient
+    ):
+        self.task_thread = task_thread
+        ControlThread.__init__(
+            self,
+            workflow_id,
+            self.task_thread.stop,
+            self.task_thread.abort,
+            redis_client,
+            'task_control_channel'
+        )
 
 
 class TaskRunner():
@@ -149,6 +182,9 @@ class TaskRunner():
 
     def set_redis_client(self, redis_client: RedisClient):
         self.redis_client = redis_client
+
+    def running_workflows(self):
+        return self.task_threads
 
     def run(
         self,
@@ -191,11 +227,13 @@ class TaskRunner():
             print('task finished')
             with TaskRunner.lock:
                 task_result = self.task_threads[workflow_id].result
+                del self.task_threads[workflow_id]
             # parse the result to correctly return a result with arguments
             return TaskRunner._parse_task_output(task_result, arguments)
         except TypeError as e:
             LOGGER.exception(e)
             traceback.print_exc(file=sys.stdout)
+            del self.task_threads[workflow_id]
             return None
 
     def _create_task_thread(
