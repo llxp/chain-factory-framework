@@ -30,6 +30,7 @@ class BlockedHandler(QueueHandler):
         redis_client: RedisClient,
         amqp_username: str = 'guest',
         amqp_password: str = 'guest',
+        namespace: str = None
     ):
         QueueHandler.__init__(self)
         QueueHandler.init(
@@ -37,7 +38,8 @@ class BlockedHandler(QueueHandler):
             amqp_host,
             blocked_queue_name,
             amqp_username,
-            amqp_password
+            amqp_password,
+            namespace
         )
         self.node_name = node_name
         self.amqp_task: AMQP = AMQP(
@@ -48,7 +50,8 @@ class BlockedHandler(QueueHandler):
             amqp_type='publisher',
             port=5672,
             ssl=False,
-            ssl_options=None
+            ssl_options=None,
+            virtual_host=namespace
         )
         self.block_list = ListHandler(
             list_name=block_list_name,

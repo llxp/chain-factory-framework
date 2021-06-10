@@ -68,3 +68,7 @@ task_queue = 'task_queue'
 wait_queue = 'wait_queue'
 incoming_blocked_queue = 'incoming_blocked_queue'
 wait_blocked_queue = 'wait_blocked_queue'
+namespace = 'root'
+# maximum time in seconds a task can run, until it will be aborted
+task_timeout = 5
+task_repeat_on_timeout = False

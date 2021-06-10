@@ -22,7 +22,7 @@ from .common.settings import incoming_block_list_redis_key
 # common
 from .common.generate_random_id import generate_random_id
 from .common.task_return_type import \
-    TaskReturnType, TaskRunnerReturnType
+    ArgumentType, TaskReturnType, TaskRunnerReturnType
 # models
 from .models.mongo.task import Task
 from .models.mongo.workflow import Workflow
@@ -40,6 +40,8 @@ class TaskHandler(QueueHandler):
         self.ack_lock = Lock()
         self.registered_tasks: Dict[str, TaskRunner] = {}
         self.redis_client = None
+        self.task_timeout = None
+        self.namespace = ''
 
     def init(
         self,
@@ -51,20 +53,23 @@ class TaskHandler(QueueHandler):
         mongodb_client: MongoDBClient,
         queue_name: str,
         wait_queue_name: str,
-        blocked_queue_name: str
+        blocked_queue_name: str,
+        namespace: str
     ):
         QueueHandler.init(
             self,
             amqp_host,
             queue_name,
             amqp_username,
-            amqp_password
+            amqp_password,
+            namespace
         )
         self.node_name: str = node_name
         self.redis_client: RedisClient = redis_client
         self.mongo_client: MongoDBClient = mongodb_client
         self.wait_queue_name: str = wait_queue_name
         self.blocked_queue_name: str = blocked_queue_name
+        self.namespace = namespace
 
         self._init_amqp_publishers(
             amqp_host=amqp_host,
@@ -75,6 +80,11 @@ class TaskHandler(QueueHandler):
             list_name=incoming_block_list_redis_key,
             redis_client=redis_client
         )
+
+    def update_task_timeout(self):
+        for task in self.registered_tasks:
+            task_runner = self.registered_tasks[task]
+            task_runner.task_timeout = self.task_timeout
 
     def _init_amqp_publishers(
         self,
@@ -92,7 +102,8 @@ class TaskHandler(QueueHandler):
             amqp_type='publisher',
             port=5672,
             ssl=False,
-            ssl_options=None
+            ssl_options=None,
+            virtual_host=self.namespace
         )
         self.amqp_planned: AMQP = AMQP(
             host=amqp_host,
@@ -106,7 +117,8 @@ class TaskHandler(QueueHandler):
             queue_options={
                 'x-dead-letter-exchange': 'dlx.' + self.queue_name,
                 'x-dead-letter-routing-key': self.queue_name
-            }
+            },
+            virtual_host=self.namespace
         )
         self.amqp_blocked: AMQP = AMQP(
             host=amqp_host,
@@ -116,7 +128,8 @@ class TaskHandler(QueueHandler):
             amqp_type='publisher',
             port=5672,
             ssl=False,
-            ssl_options=None
+            ssl_options=None,
+            virtual_host=self.namespace
         )
 
     def _check_blocklist(self, task: Task, message: Message) -> bool:
@@ -224,10 +237,12 @@ class TaskHandler(QueueHandler):
         # check, if result is a string ==> task name
         if isinstance(task_result, str):
             return Task(task_result, new_arguments)
+        if isinstance(task_result, Task):
+            return task_result
         # check, if result is a registered callable
         if callable(task_result):
             return Task(task_result.__name__, new_arguments)
-        return task_result
+        return None
 
     def _return_new_task(
         self,
@@ -269,8 +284,6 @@ class TaskHandler(QueueHandler):
         task.arguments = new_arguments
         # send task to wait queue
         self.amqp_wait.send(task.to_json())
-        # acknowledge the message to delete it from the task queue
-        self.ack(message)
         return None
 
     @staticmethod
@@ -307,6 +320,27 @@ class TaskHandler(QueueHandler):
             workflow_status_redis_key,
             WorkflowStatus(status='None', workflow_id=workflow_id).to_json())
 
+    def _handle_workflow_stopped(self, result: str, task: Task):
+        self._save_task_result(
+            task.task_id,
+            result
+        )
+        # None means, the workflow chain stops
+        self._mark_workflow_as_stopped(task.workflow_id)
+        return None  # do nothing
+
+    def _handle_repeat_task(
+        self,
+        message: Message,
+        task: Task,
+        arguments: ArgumentType,
+        result: str
+    ):
+        self._save_task_result(task.task_id, result)
+        # the result is False, indicating an error
+        # => schedule the task to the waiting queue
+        return self._return_error_task(message, task, arguments)
+
     def _handle_task_result(
         self,
         task_result: Union[bool, None, Task],
@@ -314,26 +348,24 @@ class TaskHandler(QueueHandler):
         message: Message,
         task: Task
     ) -> Union[Task, None]:
-        if task_result is not False:  # task_result now can only be Task/None
+        if task_result is False:
+            return self._handle_repeat_task(message, task, arguments, 'False')
+        elif task_result is TimeoutError:
+            if self.registered_tasks[task.name].task_repeat_on_timeout:
+                return self._handle_repeat_task(
+                    message, task, arguments, 'FalseTimeout')
+            self.ack(message)
+            return self._handle_workflow_stopped('Timeout', task)
+        else:  # task_result now can only be Task/None/Exception
             # acknowledge the message, as the task was successful
             self.ack(message)
             if task_result is None:
-                self._save_task_result(task.task_id, 'None')
-                # None means, the workflow chain stops
-                self._mark_workflow_as_stopped(task.workflow_id)
-                return None  # do nothing
+                return self._handle_workflow_stopped('None', task)
+            elif task_result is Exception:
+                return self._handle_workflow_stopped('Exception', task)
             else:
-                if task_result is Exception:
-                    self._save_task_result(task.task_id, 'Exception')
-                    return None
-                else:
-                    self._save_task_result(task.task_id, 'Task')
-                    return self._return_new_task(task, arguments, task_result)
-        else:  # task_result is now False
-            self._save_task_result(task.task_id, 'False')
-            # the result is False, indicating an error
-            # => schedule the task to the waiting queue
-            return self._return_error_task(message, task, arguments)
+                self._save_task_result(task.task_id, 'Task')
+                return self._return_new_task(task, arguments, task_result)
 
     def _prepare_task_in_database(self, task: Task):
         self._save_first_task_as_workflow(task)
@@ -464,14 +496,16 @@ class TaskHandler(QueueHandler):
         # return None to indicate no next task should be scheduled
         return None
 
-    def add_task(self, name, callback):
+    def add_task(self, name, callback, repeat_on_timeout):
         """
         Register a new task/task function
         """
         task = TaskRunner(
             name,
-            callback
+            callback,
+            self.namespace
         )
+        task.task_repeat_on_timeout = repeat_on_timeout
         task.set_redis_client(self.redis_client)
         self.registered_tasks[name] = task
 
@@ -479,6 +513,7 @@ class TaskHandler(QueueHandler):
         for task_name in self.registered_tasks:
             task: TaskRunner = self.registered_tasks[task_name]
             task.set_redis_client(self.redis_client)
+            task.namespace = self.namespace
 
     def scale(self, worker_count: int = 1):
         """

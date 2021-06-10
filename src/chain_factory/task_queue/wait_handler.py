@@ -26,7 +26,8 @@ class WaitHandler(QueueHandler):
         blocked_queue_name: str,
         amqp_username: str,
         amqp_password: str,
-        redis_client: RedisClient
+        redis_client: RedisClient,
+        namespace: str
     ):
         QueueHandler.__init__(self)
         QueueHandler.init(
@@ -34,7 +35,8 @@ class WaitHandler(QueueHandler):
             amqp_host,
             wait_queue_name,
             amqp_username,
-            amqp_password
+            amqp_password,
+            namespace
         )
         self.node_name = node_name
         self.wait_queue_name = wait_queue_name
@@ -46,7 +48,8 @@ class WaitHandler(QueueHandler):
             amqp_type='publisher',
             port=5672,
             ssl=False,
-            ssl_options=None
+            ssl_options=None,
+            virtual_host=namespace
         )
         self.amqp_blocked: AMQP = AMQP(
             host=amqp_host,
@@ -55,7 +58,8 @@ class WaitHandler(QueueHandler):
             amqp_type='publisher',
             port=5672,
             ssl=False,
-            ssl_options=None
+            ssl_options=None,
+            virtual_host=namespace
         )
         self.block_list = ListHandler(
             list_name=wait_block_list_redis_key,

@@ -1,4 +1,4 @@
-from typing import Dict, Any, Union
+from typing import Callable, Dict, Any, Union
 import json
 import logging
 import traceback
@@ -76,43 +76,41 @@ class TaskThread(InterruptableThread):
         self.status = 4
         super().abort()
 
-
-class IStoppable:
-    @abc.abstractmethod
-    def stop(self):
-        pass
-
-    @abc.abstractmethod
-    def abort(self):
-        pass
+    def abort_timeout(self):
+        self.result = TimeoutError
+        self.status = 5
+        super().abort()
 
 
 class ControlThread(InterruptableThread):
     def __init__(
         self,
         workflow_id: str,
-        stop, abort,
+        control_actions: Dict[str, Callable],
         redis_client: RedisClient,
         control_channel: str
     ):
         InterruptableThread.__init__(self)
         self.workflow_id = workflow_id
-        self.stop_func = stop
-        self.abort_func = abort
+        self.control_actions = control_actions
         self.redis_client = redis_client
         self.control_channel = control_channel
+        self.run_thread = True
+
+    def stop(self):
+        self.run_thread = False
 
     def run(self):
         try:
             self.redis_client.subscribe(self.control_channel)
-            while True:
+            while self.run_thread:
                 msg = self.redis_client.get_message()
                 if msg is not None:
                     if self._control_task_thread_handle_channel(msg):
                         break
                 time.sleep(0.001)
         except ThreadAbortException:
-            pass
+            return
 
     def _control_task_thread_handle_channel(
         self,
@@ -135,18 +133,12 @@ class ControlThread(InterruptableThread):
         if type(data) == bytes:
             decoded_data = data.decode('utf-8')
             parsed_data = TaskControlMessage.from_json(decoded_data)
-            if (
-                parsed_data.workflow_id == self.workflow_id and
-                parsed_data.command == 'stop'
-            ):
-                self.stop_func()
-                return True
-            if (
-                parsed_data.workflow_id == self.workflow_id and
-                parsed_data.command == 'abort'
-            ):
-                self.abort_func()
-                return True
+            if parsed_data.workflow_id == self.workflow_id:
+                print('workflow_id matched')
+                for command in self.control_actions:
+                    if parsed_data.command == command:
+                        self.control_actions[command]()
+                        return True
         return False
 
 
@@ -155,16 +147,19 @@ class TaskControlThread(ControlThread):
         self,
         workflow_id: str,
         task_thread: TaskThread,
-        redis_client: RedisClient
+        redis_client: RedisClient,
+        namespace: str
     ):
         self.task_thread = task_thread
         ControlThread.__init__(
             self,
             workflow_id,
-            self.task_thread.stop,
-            self.task_thread.abort,
+            {
+                'stop': self.task_thread.stop,
+                'abort': self.task_thread.abort
+            },
             redis_client,
-            'task_control_channel'
+            namespace + '_' + 'task_control_channel'
         )
 
 
@@ -174,11 +169,15 @@ class TaskRunner():
     def __init__(
         self,
         name: str,
-        callback: CallbackType
+        callback: CallbackType,
+        namespace: str
     ):
         self.callback: CallbackType = callback
         self.name: str = name
         self.task_threads: Dict[str, TaskThread] = {}
+        self.task_timeout = None
+        self.task_repeat_on_timeout = False
+        self.namespace = namespace
 
     def set_redis_client(self, redis_client: RedisClient):
         self.redis_client = redis_client
@@ -214,7 +213,8 @@ class TaskRunner():
                 task_control_thread = TaskControlThread(
                     workflow_id,
                     self.task_threads[workflow_id],
-                    self.redis_client
+                    self.redis_client,
+                    self.namespace
                 )
                 task_control_thread.start()
                 self._control_task_thread(workflow_id)
@@ -224,7 +224,9 @@ class TaskRunner():
             if self.task_threads[workflow_id].status == 2:
                 # wait for task thread to normally exit
                 self.task_threads[workflow_id].join()
-            print('task finished')
+                print('task finished')
+            else:
+                print('task aborted or stopped')
             with TaskRunner.lock:
                 task_result = self.task_threads[workflow_id].result
                 del self.task_threads[workflow_id]
@@ -248,7 +250,7 @@ class TaskRunner():
         )
 
     def _task_finished(self, workflow_id: str):
-        return self.task_threads[workflow_id].status in [2, 3, 4]
+        return self.task_threads[workflow_id].status in [2, 3, 4, 5]
 
     def _control_task_thread(self, workflow_id: str):
         """
@@ -257,7 +259,16 @@ class TaskRunner():
             => but only, if the 'stop' message
             arrives during the thread's runtime
         """
+        start_time = time.time()
         while True:
+            current_time = time.time()
+            elapsed_time = current_time - start_time
+            if (
+                self.task_timeout is not None and
+                elapsed_time > self.task_timeout
+            ):
+                self.task_threads[workflow_id].abort_timeout()
+                break
             # check, if exited, stopped or aborted
             if self._task_finished(workflow_id):
                 break

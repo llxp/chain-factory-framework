@@ -125,8 +125,11 @@ class RedisClient():
         return self._pubsub_connection.listen()
 
     def get_message(self):
-        return self._pubsub_connection.get_message(
-            ignore_subscribe_messages=True)
+        try:
+            return self._pubsub_connection.get_message(
+                ignore_subscribe_messages=True)
+        except ConnectionError:
+            return None
 
     def publish(self, channel: str, obj):
         return self._connection.publish(channel, obj)

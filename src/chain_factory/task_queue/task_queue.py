@@ -1,6 +1,10 @@
+import logging
 from typing import List, Dict, Callable
 import inspect
 import json
+import time
+import sys
+from _thread import interrupt_main
 
 from .task_handler import TaskHandler
 from .task_runner import TaskRunner, ControlThread
@@ -27,7 +31,10 @@ from .common.settings import \
     incoming_blocked_queue as default_incoming_blocked_queue, \
     wait_blocked_queue as default_wait_blocked_queue, \
     incoming_block_list_redis_key as default_incoming_block_list_redis_key, \
-    wait_block_list_redis_key as default_wait_block_list_redis_key
+    wait_block_list_redis_key as default_wait_block_list_redis_key, \
+    task_timeout as default_task_timeout, \
+    task_repeat_on_timeout as default_task_repeat_on_timeout, \
+    namespace as default_namespace
 from .common.generate_random_id import generate_random_id
 from .models.mongo.registered_task import RegisteredTask
 from .models.mongo.node_tasks import NodeTasks
@@ -63,6 +70,9 @@ class TaskQueue():
             default_incoming_block_list_redis_key
         self.wait_block_list_redis_key = \
             default_wait_block_list_redis_key
+        self.task_timeout = default_task_timeout
+        self.task_repeat_on_timeout = default_task_repeat_on_timeout
+        self.namespace = default_namespace
 
     def init(self):
         """
@@ -102,21 +112,48 @@ class TaskQueue():
         self.redis_client = self._init_redis()
         self.mongodb_client = self._init_mongodb()
 
+    def stop_node(self):
+        self.stop_listening()
+        running_workflows_counter = 0
+        task_runner_count = len(self.task_handler.registered_tasks)
+        while running_workflows_counter < task_runner_count:
+            running_workflows_counter = 0
+            for registered_task in self.task_handler.registered_tasks:
+                task_runner = \
+                    self.task_handler.registered_tasks[registered_task]
+                if len(task_runner.running_workflows()) <= 0:
+                    running_workflows_counter = running_workflows_counter + 1
+            time.sleep(0.1)
+        if running_workflows_counter >= task_runner_count:
+            print('node is dry')
+            self.stop_heartbeat()
+            self.mongodb_client.client.close()
+            self.redis_client._connection.close()
+            self.redis_client._pubsub_connection.close()
+            self.task_handler.amqp.close()
+            self.wait_thread.amqp.close()
+            logging.shutdown()
+            self.node_control_thread.stop()
+            self.node_control_thread.abort()
+
+    def stop_heartbeat(self):
+        self.cluster_heartbeat.stop_heartbeat()
+
     def _listen_control_messages(self):
         try:
-            task_control_thread = ControlThread(
+            redis_client = self._init_redis()
+            self.node_control_thread = ControlThread(
                 self.node_name,
-                self.stop_listening,
-                self.stop_listening,
-                self.redis_client,
-                'node_control_channel'
+                {
+                    'stop': interrupt_main
+                },
+                redis_client,
+                self.namespaced('node_control_channel')
             )
-            task_control_thread.start()
-            # task_control_thread.abort()
+            self.node_control_thread.start()
         except ThreadAbortException:
-            task_control_thread.abort()
-        except KeyboardInterrupt:
-            task_control_thread.abort()
+            print('detected abort')
+            self.node_control_thread.abort()
 
     def _init_handlers(self):
         """
@@ -133,7 +170,11 @@ class TaskQueue():
         self._init_task_handler()
         self.init_cluster_heartbeat()
 
-    def task(self, name: str = ''):
+    def task(
+        self,
+        name: str = '',
+        repeat_on_timeout: bool = default_task_repeat_on_timeout
+    ):
         """
         Decorator to simply register a new task
         """
@@ -144,7 +185,7 @@ class TaskQueue():
                 temp_name = func.__name__
             # register the function
             # using the function name
-            self.task_handler.add_task(temp_name, func)
+            self.task_handler.add_task(temp_name, func, repeat_on_timeout)
         return wrapper
 
     def add_task(self, func, name: str = ''):
@@ -242,9 +283,10 @@ class TaskQueue():
             amqp_username=self.amqp_username,
             amqp_password=self.amqp_password,
             redis_client=self.redis_client,
-            queue_name=self.task_queue,
-            wait_queue_name=self.wait_queue,
-            blocked_queue_name=self.wait_blocked_queue
+            queue_name=self.namespace + '_' + self.task_queue,
+            wait_queue_name=self.namespace + '_' + self.wait_queue,
+            blocked_queue_name=self.namespace + '_' + self.wait_blocked_queue,
+            namespace=self.namespace
         )
 
     def _init_incoming_blocked_handler(self):
@@ -261,9 +303,10 @@ class TaskQueue():
             amqp_username=self.amqp_username,
             amqp_password=self.amqp_password,
             redis_client=self.redis_client,
-            task_queue_name=self.task_queue,
-            blocked_queue_name=self.incoming_blocked_queue,
-            block_list_name=self.incoming_block_list_redis_key
+            task_queue_name=self.namespaced(self.task_queue),
+            blocked_queue_name=self.namespaced(self.incoming_blocked_queue),
+            block_list_name=self.namespaced(self.incoming_block_list_redis_key),
+            namespace=self.namespace
         )
 
     def _init_wait_blocked_handler(self):
@@ -276,10 +319,14 @@ class TaskQueue():
             amqp_username=self.amqp_username,
             amqp_password=self.amqp_password,
             redis_client=self.redis_client,
-            task_queue_name=self.wait_queue,
-            blocked_queue_name=self.wait_blocked_queue,
-            block_list_name=self.wait_block_list_redis_key
+            task_queue_name=self.namespaced(self.wait_queue),
+            blocked_queue_name=self.namespaced(self.wait_blocked_queue),
+            block_list_name=self.namespaced(self.wait_block_list_redis_key),
+            namespace=self.namespace
         )
+
+    def namespaced(self, var: str):
+        return self.namespace + '_' + var
 
     def _init_task_handler(self):
         """
@@ -292,18 +339,21 @@ class TaskQueue():
             amqp_username=self.amqp_username,
             amqp_password=self.amqp_password,
             redis_client=self.redis_client,
-            queue_name=self.task_queue,
-            wait_queue_name=self.wait_queue,
-            blocked_queue_name=self.incoming_blocked_queue,
-            mongodb_client=self.mongodb_client
+            queue_name=self.namespaced(self.task_queue),
+            wait_queue_name=self.namespaced(self.wait_queue),
+            blocked_queue_name=self.namespaced(self.incoming_blocked_queue),
+            mongodb_client=self.mongodb_client,
+            namespace=self.namespace
         )
+        self.task_handler.task_timeout = self.task_timeout
+        self.task_handler.update_task_timeout()
 
     def init_cluster_heartbeat(self):
         """
         Init the ClusterHeartbeat
         """
         self.cluster_heartbeat: ClusterHeartbeat = ClusterHeartbeat(
-            self.node_name,
+            self.namespaced(self.node_name),
             self.redis_client
         )
 
@@ -328,3 +378,17 @@ class TaskQueue():
         self.cluster_heartbeat.start_heartbeat()
         print('listening')
         self._listen_handlers()
+
+    def run_main_loop(self):
+        run_sleep = True
+        try:
+            while run_sleep:
+                time.sleep(0.01)  # keep mainthread running
+        except KeyboardInterrupt:
+            self.stop_node()
+            print('node halted')
+            try:
+                while run_sleep:
+                    time.sleep(0.01)  # keep mainthread running
+            except KeyboardInterrupt:
+                exit(0)

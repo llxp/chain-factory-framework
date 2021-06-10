@@ -7,11 +7,11 @@ from _thread import start_new_thread, interrupt_main
 from dataclasses import dataclass
 
 from amqpstorm import Connection, Channel, Message as AMQPStormMessage
-
-from ..common.settings import prefetch_count
 from amqpstorm.exception import \
     AMQPChannelError, AMQPConnectionError, \
     AMQPInvalidArgument
+
+from ..common.settings import prefetch_count
 
 LOGGER = logging.getLogger(__name__)
 
@@ -42,7 +42,8 @@ class AMQP():
         callback: Callable[[Message], str] = None,
         ssl: bool = False,
         ssl_options: SSLOptions = None,
-        queue_options: Dict[str, Any] = None
+        queue_options: Dict[str, Any] = None,
+        virtual_host: str = None
     ):
         self.callback: Callable[[Message], str] = callback
         self.queue_name: str = queue_name
@@ -54,7 +55,8 @@ class AMQP():
             password=password,
             port=port,
             ssl=ssl,
-            ssl_options=ssl_options)
+            ssl_options=ssl_options,
+            virtual_host=virtual_host)
         self.consumer_list: List(_Consumer) = []
         self.sender_channel: _Consumer = _Consumer(
             self.connection, self.queue_name, queue_options)
@@ -75,10 +77,14 @@ class AMQP():
         """
         self.close()
 
+    def stop_callback(self):
+        self.callback = None
+
     def close(self):
         """
         close all consumers and close the connection
         """
+        self.callback = None
         for consumer in self.consumer_list:
             consumer.close()
         self.connection.close()
@@ -90,7 +96,8 @@ class AMQP():
         password: str,
         port: int = 5672,
         ssl: bool = False,
-        ssl_options: SSLOptions = None
+        ssl_options: SSLOptions = None,
+        virtual_host: str = None
     ) -> Connection:
         """
         Connects to an amqp server
@@ -103,7 +110,10 @@ class AMQP():
                 password=password,
                 port=port,
                 ssl=ssl,
-                ssl_options=ssl_options
+                timeout=5,
+                heartbeat=5,
+                ssl_options=ssl_options,
+                virtual_host=virtual_host
             )
         else:
             connection = Connection(
@@ -112,7 +122,8 @@ class AMQP():
                 password=password,
                 port=port,
                 timeout=5,
-                heartbeat=5
+                heartbeat=5,
+                virtual_host=virtual_host
             )
         LOGGER.debug('opened new BlockingConnection to host %s' % host)
         return connection
@@ -244,13 +255,13 @@ class AMQP():
         # how many need to be removed
         remove_worker_count = self._consumer_count() - worker_count
         for i in range(0, remove_worker_count):
-            self._remove_consumer(i)
+            self._remove_last_consumer()
 
     def _add_consumer(self, consumer: '_Consumer'):
         self.consumer_list.append(consumer)
 
-    def _remove_consumer(self, index: int):
-        existing_consumer: _Consumer = self.consumer_list.pop(index)
+    def _remove_last_consumer(self):
+        existing_consumer: _Consumer = self.consumer_list.pop(-1)
         existing_consumer.close()
 
     def send(self, message: str) -> Union[bool, None]:
@@ -326,8 +337,11 @@ class _Consumer():
         """
         stop consuming on the channel and close the channel
         """
-        self.channel.stop_consuming()
-        self.channel.close()
+        try:
+            self.channel.stop_consuming()
+            self.channel.close()
+        except (KeyError, AMQPConnectionError):
+            pass
 
     def message_count(self) -> int:
         """

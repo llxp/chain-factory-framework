@@ -26,7 +26,8 @@ class QueueHandler():
         amqp_host: str,
         queue_name: str,
         amqp_username: str,
-        amqp_password: str
+        amqp_password: str,
+        virtual_host: str = None
     ):
         """
         Separate init logic to be able to use lazy initialisation
@@ -35,13 +36,20 @@ class QueueHandler():
         self._connect(
             amqp_host=amqp_host,
             amqp_username=amqp_username,
-            amqp_password=amqp_password
+            amqp_password=amqp_password,
+            virtual_host=virtual_host
         )
 
     def stop_listening(self):
-        self.amqp.close()
+        self.amqp.stop_callback()
 
-    def _connect(self, amqp_host: str, amqp_username: str, amqp_password: str):
+    def _connect(
+        self,
+        amqp_host: str,
+        amqp_username: str,
+        amqp_password: str,
+        virtual_host: str = None
+    ):
         """
         Connects to amqp
         """
@@ -55,7 +63,8 @@ class QueueHandler():
                 amqp_type='consumer',
                 callback=self._on_message,
                 ssl=False,
-                ssl_options=None
+                ssl_options=None,
+                virtual_host=virtual_host
             )
         except AMQPConnectionError:
             traceback.print_exc(file=sys.stdout)

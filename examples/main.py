@@ -1,10 +1,12 @@
 import sys
-sys.path.append('../src')
+import os
+sys.path.append(os.getcwd() + '\\framework\\src')
 from chain_factory.task_queue.models.mongo.task import Task
 import time
 import os
 
 from chain_factory.task_queue.task_queue import TaskQueue
+#import hanging_threads
 
 import logging
 FORMAT = (
@@ -21,7 +23,7 @@ logging.basicConfig(
 
 # create the main TaskQueue object
 task_queue = TaskQueue()
-host = '172.16.19.15'
+host = '127.0.0.1'
 # the current node name. Should be later changed to an environment variable
 task_queue.node_name = os.getenv('HOSTNAME', 'devnode01')
 # the amqp endpoint. Should later be changed to an environment variable
@@ -62,9 +64,10 @@ def simulate(times: int, i: int, exclude=['i']):
     global counter
     counter = counter + 1
     print('counter: ' + str(counter))
-    for i in range(0, times):
-        time.sleep(1)
-    # print(" [x] Done %d" % i)
+    print(type(times))
+    # for i in range(0, times):
+    time.sleep(times)
+    print(" [x] Done %d" % i)
     return None
 
 
@@ -116,5 +119,4 @@ if __name__ == '__main__':
     task_queue.listen()  # start the node
 
     # time.sleep(1000)
-    while(True):
-        time.sleep(0.01)  # keep mainthread running
+    task_queue.run_main_loop()
