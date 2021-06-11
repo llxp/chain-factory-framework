@@ -1,6 +1,6 @@
 import sys
-import os
-sys.path.append(os.getcwd() + '\\framework\\src')
+import pathlib
+sys.path.append(pathlib.Path(__file__).parent.parent.absolute().as_posix() + '/src')
 from chain_factory.task_queue.models.mongo.task import Task
 import time
 import os
@@ -39,6 +39,7 @@ task_queue.mongodb_connection = os.getenv(
     'mongodb://root:example@' + host + '/orchestrator_db?authSource=admin'
 )
 task_queue.worker_count = 10
+task_queue.namespace = None
 
 counter = 0
 

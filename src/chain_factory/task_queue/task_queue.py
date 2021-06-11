@@ -283,9 +283,9 @@ class TaskQueue():
             amqp_username=self.amqp_username,
             amqp_password=self.amqp_password,
             redis_client=self.redis_client,
-            queue_name=self.namespace + '_' + self.task_queue,
-            wait_queue_name=self.namespace + '_' + self.wait_queue,
-            blocked_queue_name=self.namespace + '_' + self.wait_blocked_queue,
+            queue_name=self.namespaced(self.task_queue),
+            wait_queue_name=self.namespaced(self.wait_queue),
+            blocked_queue_name=self.namespaced(self.wait_blocked_queue),
             namespace=self.namespace
         )
 
@@ -326,7 +326,9 @@ class TaskQueue():
         )
 
     def namespaced(self, var: str):
-        return self.namespace + '_' + var
+        if self.namespace:
+            return self.namespace + '_' + var
+        return var
 
     def _init_task_handler(self):
         """

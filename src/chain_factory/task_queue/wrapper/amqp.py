@@ -103,28 +103,20 @@ class AMQP():
         Connects to an amqp server
         """
         LOGGER.debug('opening new BlockingConnection to host %s' % host)
+        options = {
+            'hostname': host,
+            'username': username,
+            'password': password,
+            'port': port,
+            'heartbeat': 5,
+            'timeout': 5,
+        }
         if ssl:
-            connection = Connection(
-                hostname=host,
-                username=username,
-                password=password,
-                port=port,
-                ssl=ssl,
-                timeout=5,
-                heartbeat=5,
-                ssl_options=ssl_options,
-                virtual_host=virtual_host
-            )
-        else:
-            connection = Connection(
-                hostname=host,
-                username=username,
-                password=password,
-                port=port,
-                timeout=5,
-                heartbeat=5,
-                virtual_host=virtual_host
-            )
+            options['ssl'] = ssl
+            options['ssl_options'] = ssl_options
+        if virtual_host:
+            options['virtual_host'] = virtual_host
+        connection = Connection(**options)
         LOGGER.debug('opened new BlockingConnection to host %s' % host)
         return connection
 

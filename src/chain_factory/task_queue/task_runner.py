@@ -62,7 +62,6 @@ class TaskThread(InterruptableThread):
             except Exception as e:
                 LOGGER.exception(e)
                 traceback.print_exc(file=sys.stdout)
-                # TODO: implement self.result = Exception
                 self.result = Exception
                 self.status = 2
                 return
@@ -159,7 +158,7 @@ class TaskControlThread(ControlThread):
                 'abort': self.task_thread.abort
             },
             redis_client,
-            namespace + '_' + 'task_control_channel'
+            (namespace + '_') if namespace else '' + 'task_control_channel'
         )
 
 
