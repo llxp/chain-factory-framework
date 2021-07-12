@@ -18,6 +18,8 @@ from .common.task_return_type import \
     ArgumentType, CallbackType, \
     TaskRunnerReturnType, TaskReturnType, \
     NormalizedTaskReturnType
+from .common.settings import \
+    task_control_channel_redis_key
 
 LOGGER = logging.getLogger(__name__)
 
@@ -28,6 +30,7 @@ class TaskThread(InterruptableThread):
     the output of stdio will be redirected to a buffer
     and later uploaded to the mongodb database
     """
+
     def __init__(self, callback, arguments, buffer):
         InterruptableThread.__init__(self)
         self.callback = callback
@@ -87,7 +90,8 @@ class ControlThread(InterruptableThread):
         workflow_id: str,
         control_actions: Dict[str, Callable],
         redis_client: RedisClient,
-        control_channel: str
+        control_channel: str,
+        thread_name: str = ''
     ):
         InterruptableThread.__init__(self)
         self.workflow_id = workflow_id
@@ -95,6 +99,8 @@ class ControlThread(InterruptableThread):
         self.redis_client = redis_client
         self.control_channel = control_channel
         self.run_thread = True
+        self.thread_name = thread_name
+        print(self.control_channel)
 
     def stop(self):
         self.run_thread = False
@@ -105,9 +111,11 @@ class ControlThread(InterruptableThread):
             while self.run_thread:
                 msg = self.redis_client.get_message()
                 if msg is not None:
+                    print(msg)
                     if self._control_task_thread_handle_channel(msg):
                         break
                 time.sleep(0.001)
+            self.redis_client._pubsub_connection.unsubscribe(self.control_channel)
         except ThreadAbortException:
             return
 
@@ -132,8 +140,8 @@ class ControlThread(InterruptableThread):
         if type(data) == bytes:
             decoded_data = data.decode('utf-8')
             parsed_data = TaskControlMessage.from_json(decoded_data)
+            print(parsed_data)
             if parsed_data.workflow_id == self.workflow_id:
-                print('workflow_id matched')
                 for command in self.control_actions:
                     if parsed_data.command == command:
                         self.control_actions[command]()
@@ -158,7 +166,11 @@ class TaskControlThread(ControlThread):
                 'abort': self.task_thread.abort
             },
             redis_client,
-            (namespace + '_') if namespace else '' + 'task_control_channel'
+            (
+                ((namespace + '_') if namespace else '') +
+                task_control_channel_redis_key
+            ),
+            'TaskControlThread'
         )
 
 

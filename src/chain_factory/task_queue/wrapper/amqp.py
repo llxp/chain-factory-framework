@@ -7,9 +7,11 @@ from _thread import start_new_thread, interrupt_main
 from dataclasses import dataclass
 
 from amqpstorm import Connection, Channel, Message as AMQPStormMessage
-from amqpstorm.exception import \
-    AMQPChannelError, AMQPConnectionError, \
-    AMQPInvalidArgument
+from amqpstorm.exception import (
+    AMQPChannelError,
+    AMQPConnectionError,
+    AMQPInvalidArgument,
+)
 
 from ..common.settings import prefetch_count
 
@@ -17,33 +19,32 @@ LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=False)
-class Message():
+class Message:
     body: str
     channel: Channel
     delivery_tag: int
 
 
 @dataclass(frozen=False)
-class SSLOptions():
+class SSLOptions:
     context: SSLContext
     server_hostname: str
 
 
-class AMQP():
-
+class AMQP:
     def __init__(
         self,
         host: str,
         queue_name: str,
         port: int = 5672,
-        username: str = 'guest',
-        password: str = 'guest',
-        amqp_type: str = 'publisher',
+        username: str = "guest",
+        password: str = "guest",
+        amqp_type: str = "publisher",
         callback: Callable[[Message], str] = None,
         ssl: bool = False,
         ssl_options: SSLOptions = None,
         queue_options: Dict[str, Any] = None,
-        virtual_host: str = None
+        virtual_host: str = None,
     ):
         self.callback: Callable[[Message], str] = callback
         self.queue_name: str = queue_name
@@ -56,10 +57,12 @@ class AMQP():
             port=port,
             ssl=ssl,
             ssl_options=ssl_options,
-            virtual_host=virtual_host)
+            virtual_host=virtual_host,
+        )
         self.consumer_list: List(_Consumer) = []
         self.sender_channel: _Consumer = _Consumer(
-            self.connection, self.queue_name, queue_options)
+            self.connection, self.queue_name, queue_options
+        )
         self.scale()
         self.acked = []
         self.nacked = []
@@ -97,27 +100,27 @@ class AMQP():
         port: int = 5672,
         ssl: bool = False,
         ssl_options: SSLOptions = None,
-        virtual_host: str = None
+        virtual_host: str = None,
     ) -> Connection:
         """
         Connects to an amqp server
         """
-        LOGGER.debug('opening new BlockingConnection to host %s' % host)
+        LOGGER.debug("opening new BlockingConnection to host %s" % host)
         options = {
-            'hostname': host,
-            'username': username,
-            'password': password,
-            'port': port,
-            'heartbeat': 5,
-            'timeout': 5,
+            "hostname": host,
+            "username": username,
+            "password": password,
+            "port": port,
+            "heartbeat": 5,
+            "timeout": 5,
         }
         if ssl:
-            options['ssl'] = ssl
-            options['ssl_options'] = ssl_options
+            options["ssl"] = ssl
+            options["ssl_options"] = ssl_options
         if virtual_host:
-            options['virtual_host'] = virtual_host
+            options["virtual_host"] = virtual_host
         connection = Connection(**options)
-        LOGGER.debug('opened new BlockingConnection to host %s' % host)
+        LOGGER.debug("opened new BlockingConnection to host %s" % host)
         return connection
 
     @staticmethod
@@ -142,32 +145,30 @@ class AMQP():
         callback function, which will be called
         everytime a new message is consumed by the pika/amqp library
         """
-        LOGGER.debug('body: %s' % message.body)
+        LOGGER.debug("body: %s" % message.body)
         if len(message.body) <= 0:
             message.ack()  # ignore empty messages
             return
         new_message: Message = Message(
-            message.body,
-            message.channel,
-            message.delivery_tag
+            message.body, message.channel, message.delivery_tag
         )
         if self.callback is not None:
-            LOGGER.debug('invoking registered callback method')
+            LOGGER.debug("invoking registered callback method")
             # start_new_thread(self._start_callback_thread, (new_message, ))
             self._start_callback_thread(new_message)
 
     def _start_callback_thread(self, new_message: Message):
         # execute the registered callback
         # print(new_message)
-        result: str = self.callback(new_message)
-        if result is not None and len(result) > 0:
-            # another task has been returned to be scheduled
-            self.send(result)
-            LOGGER.debug(
-                'sent task to same queue, because result is %s' % result)
-        else:
-            # self.nack(new_message)
-            LOGGER.debug('invoked registered callback method, result is None')
+        if self.callback:
+            result: str = self.callback(new_message)
+            if result is not None and len(result) > 0:
+                # another task has been returned to be scheduled
+                self.send(result)
+                LOGGER.debug("sent task to same queue, because result is %s" % result)
+            else:
+                # self.nack(new_message)
+                LOGGER.debug("invoked registered callback method, result is None")
 
     def ack(self, message: Message):
         """
@@ -179,16 +180,14 @@ class AMQP():
         """
         Nacks/Rejects the specified message
         """
-        traceback.print_stack()
-        message.channel.basic.nack(
-            delivery_tag=message.delivery_tag, requeue=True)
+        # traceback.print_stack()
+        message.channel.basic.nack(delivery_tag=message.delivery_tag, requeue=True)
 
     def reject(self, message: Message):
         """
         Rejects the specified message
         """
-        message.channel.basic.reject(
-            delivery_tag=message.delivery_tag, requeue=True)
+        message.channel.basic.reject(delivery_tag=message.delivery_tag, requeue=True)
 
     def listen(self):
         """
@@ -196,17 +195,16 @@ class AMQP():
         """
         i = 0
         for consumer in self.consumer_list:
-            start_new_thread(self._start_consuming, (consumer, ))
-            LOGGER.info(
-                'starting new consumer %d for queue %s' % (i, self.queue_name))
+            start_new_thread(self._start_consuming, (consumer,))
+            LOGGER.info("starting new consumer %d for queue %s" % (i, self.queue_name))
             i = i + 1
 
     @staticmethod
-    def _start_consuming(consumer: '_Consumer'):
+    def _start_consuming(consumer: "_Consumer"):
         try:
             consumer.channel.start_consuming()
         except Exception:
-            print('start_consuming exception')
+            print("start_consuming exception")
             traceback.print_exc(file=sys.stdout)
             interrupt_main()
 
@@ -215,10 +213,10 @@ class AMQP():
         Set the worker count
         """
         # used for consuming messages from the queue
-        if self.amqp_type == 'consumer':
+        if self.amqp_type == "consumer":
             self._scale_consumer(worker_count)
         # used for publishing messages on the queue
-        elif self.amqp_type == 'publisher':
+        elif self.amqp_type == "publisher":
             pass
 
     def _scale_consumer(self, worker_count: int):
@@ -240,8 +238,7 @@ class AMQP():
         # how many need to be added
         add_worker_count = worker_count - self._consumer_count()
         for i in range(0, add_worker_count):
-            self._add_consumer(_Consumer(
-                self.connection, self.queue_name))
+            self._add_consumer(_Consumer(self.connection, self.queue_name))
 
     def _scale_remove_consumer(self, worker_count: int):
         # how many need to be removed
@@ -249,7 +246,7 @@ class AMQP():
         for i in range(0, remove_worker_count):
             self._remove_last_consumer()
 
-    def _add_consumer(self, consumer: '_Consumer'):
+    def _add_consumer(self, consumer: "_Consumer"):
         self.consumer_list.append(consumer)
 
     def _remove_last_consumer(self):
@@ -260,17 +257,16 @@ class AMQP():
         """
         Publishes a new task on the queue
         """
-        new_message = self._create_new_message(message)
-        return new_message.publish(self.queue_name)
+        try:
+            new_message = self._create_new_message(message)
+            return new_message.publish(self.queue_name)
+        except AMQPConnectionError:
+            traceback.print_exc(file=sys.stdout)
+            interrupt_main()
 
     def _create_new_message(self, message: str):
-        properties = {
-            'content_type': 'text/plain',
-            'headers': {},
-            'delivery_mode': 2
-        }
-        return AMQPStormMessage.create(
-            self.sender_channel.channel, message, properties)
+        properties = {"content_type": "text/plain", "headers": {}, "delivery_mode": 2}
+        return AMQPStormMessage.create(self.sender_channel.channel, message, properties)
 
     def delete_queue(self):
         """
@@ -285,12 +281,12 @@ class AMQP():
         self.sender_channel.clear_queue()
 
 
-class _Consumer():
+class _Consumer:
     def __init__(
         self,
         connection: Connection,
         queue_name: str,
-        queue_options: Dict[str, Any] = None
+        queue_options: Dict[str, Any] = None,
     ):
         self.queue_name = queue_name
         self.channel: Channel = self._open_channel(connection)
@@ -301,29 +297,29 @@ class _Consumer():
         """
         returns the current opened channel of the amqp connection
         """
-        LOGGER.debug('opening new BlockingChannel on opened connection')
+        LOGGER.debug("opening new BlockingChannel on opened connection")
         channel = connection.channel()
-        LOGGER.debug('opened new BlockingChannel on opened connection')
+        LOGGER.debug("opened new BlockingChannel on opened connection")
         return channel
 
     def _declare_queue(self, queue_options: Dict[str, Any]):
         """
         Declare the specified queue
         """
-        LOGGER.debug('declaring queue %s' % self.queue_name)
+        LOGGER.debug("declaring queue %s" % self.queue_name)
         self.channel.queue.declare(
-            queue=self.queue_name, durable=True, arguments=queue_options)
-        LOGGER.debug('declared queue %s' % self.queue_name)
+            queue=self.queue_name, durable=True, arguments=queue_options
+        )
+        LOGGER.debug("declared queue %s" % self.queue_name)
 
     def consume(self, callback: Callable[[Message], str]):
         """
         Specify, that this instance should be used to consume messages
         """
         self.channel.basic.qos(prefetch_count=prefetch_count)
-        self.channel.basic.consume(
-            queue=self.queue_name, callback=callback)
+        self.channel.basic.consume(queue=self.queue_name, callback=callback)
         # print(' [*] Waiting for messages. To exit press CTRL+C')
-        LOGGER.info(' [*] Waiting for messages. To exit press CTRL+C')
+        LOGGER.info(" [*] Waiting for messages. To exit press CTRL+C")
 
     def close(self):
         """
@@ -344,9 +340,9 @@ class _Consumer():
             durable=True,
             exclusive=False,
             auto_delete=False,
-            passive=True
+            passive=True,
         )
-        return res['message_count']
+        return res["message_count"]
 
     def delete_queue(self):
         """

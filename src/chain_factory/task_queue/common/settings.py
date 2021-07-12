@@ -48,6 +48,8 @@ heartbeat_sleep_time: int = 1  # seconds
 incoming_block_list_redis_key = 'incoming_block_list'
 # redis key, which should hold the block list for the wait block list
 wait_block_list_redis_key = 'wait_block_list'
+# task control channel redis key
+task_control_channel_redis_key = 'task_control_channel'
 # redis host
 redis_host = 'redis'
 # redis port
@@ -70,5 +72,5 @@ incoming_blocked_queue = 'incoming_blocked_queue'
 wait_blocked_queue = 'wait_blocked_queue'
 namespace = 'root'
 # maximum time in seconds a task can run, until it will be aborted
-task_timeout = 5
+task_timeout = None
 task_repeat_on_timeout = False

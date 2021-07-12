@@ -1,6 +1,7 @@
 import redis as redis_impl
 from redis.client import PubSub, Redis
 from redis.exceptions import ConnectionError, TimeoutError, LockError
+from threading import Thread, Lock
 from typing import Dict, Any
 import logging
 from ..decorators.repeat import repeat
@@ -28,6 +29,7 @@ class RedisClient():
             db
         )
         self._pubsub_connection: PubSub = self._get_pubsub_connection()
+        self.mutex = Lock()
 
     def _get_connection(
         self,
@@ -125,11 +127,14 @@ class RedisClient():
         return self._pubsub_connection.listen()
 
     def get_message(self):
+        self.mutex.acquire()
         try:
             return self._pubsub_connection.get_message(
                 ignore_subscribe_messages=True)
         except ConnectionError:
             return None
+        finally:
+            self.mutex.release()
 
     def publish(self, channel: str, obj):
         return self._connection.publish(channel, obj)

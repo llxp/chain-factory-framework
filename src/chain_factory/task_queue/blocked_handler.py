@@ -90,8 +90,7 @@ class BlockedHandler(QueueHandler):
                 return False
         # reschedule task, which is in incoming block list
         LOGGER.info('waiting: task %s is on block list...' % task_name)
-        self.send_to_queue(task, self.amqp_task)
-        self.ack(message)
+        self._send_to_task_queue(task, message)
         time.sleep(wait_time)
         return True
 
@@ -99,6 +98,11 @@ class BlockedHandler(QueueHandler):
         self.ack(message)
         self.send_to_queue(task, self.amqp)
         LOGGER.debug("sent back to blocked queue")
+
+    def _send_to_task_queue(self, task: Task, message: Message):
+        self.ack(message)
+        self.send_to_queue(task, self.amqp_task)
+        LOGGER.debug("sent back to task queue")
 
     def on_task(self, task: Task, message: Message) -> Task:
         LOGGER.debug('BlockedHandler:on_task: queue_name: ' + self.queue_name)

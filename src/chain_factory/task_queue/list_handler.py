@@ -6,15 +6,12 @@ from .models.etc.list_item_container import ListItem, ListItemContainer
 from .decorators.parse_catcher import parse_catcher
 
 
-class ListHandler():
+class ListHandler:
     """
     Wrapper class to manage a list in redis in form of a json document
     """
-    def __init__(
-        self,
-        list_name: str,
-        redis_client: RedisClient
-    ):
+
+    def __init__(self, list_name: str, redis_client: RedisClient):
         self.list_name = list_name
         self.redis_client = redis_client
         self.init()
@@ -26,7 +23,7 @@ class ListHandler():
         parse the string to json and
         check, if the data structure fo the parsed object is valid
         """
-        decoded = body.decode('utf-8')
+        decoded = body.decode("utf-8")
         # the from_json method comes from the dataclass_json decorator
         return ListItemContainer.from_json(decoded)
 
@@ -37,10 +34,7 @@ class ListHandler():
         if self.redis_client is not None:
             list_item_container = ListItemContainer()
             # the from_json method comes from the dataclass_json decorator
-            return self.redis_client.set(
-                self.list_name,
-                list_item_container.to_json()
-            )
+            return self.redis_client.set(self.list_name, list_item_container.to_json())
         return False
 
     def init(self):
@@ -52,10 +46,7 @@ class ListHandler():
             current_list = self.get()
             if current_list is None:
                 list_item_container = ListItemContainer()
-                self.redis_client.set(
-                    self.list_name,
-                    list_item_container.to_json()
-                )
+                self.redis_client.set(self.list_name, list_item_container.to_json())
 
     def add(self, list_item: ListItem) -> bool:
         """
@@ -64,17 +55,14 @@ class ListHandler():
         if self.redis_client is not None:
             current_list = self.get()
             if (
-                current_list is not None and
-                current_list.list_items is not None and
-                list_item not in current_list.list_items
+                current_list is not None
+                and current_list.list_items is not None
+                and list_item not in current_list.list_items
             ):
                 current_list.list_items.append(list_item)
             else:
                 return False
-            return self.redis_client.set(
-                self.list_name,
-                current_list.to_json()
-            )
+            return self.redis_client.set(self.list_name, current_list.to_json())
         return False
 
     def remove(self, list_item: ListItem) -> bool:
@@ -84,17 +72,14 @@ class ListHandler():
         if self.redis_client is not None:
             current_list: List[ListItem] = self.get()
             if (
-                current_list is not None and
-                current_list.list_items is not None and
-                list_item in current_list.list_items
+                current_list is not None
+                and current_list.list_items is not None
+                and list_item in current_list.list_items
             ):
                 current_list.list_items.remove(list_item)
             else:
                 return False
-            return self.redis_client.set(
-                self.list_name,
-                current_list.to_json()
-            )
+            return self.redis_client.set(self.list_name, current_list.to_json())
         return False
 
     def get(self) -> ListItemContainer:

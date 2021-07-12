@@ -9,6 +9,7 @@ import pytz
 @dataclass(frozen=False)
 class Heartbeat():
     node_name: str = ''
+    namespace: str = ''
     last_time_seen: datetime = field(
         default_factory=lambda: datetime.now(pytz.UTC),
         metadata=config(

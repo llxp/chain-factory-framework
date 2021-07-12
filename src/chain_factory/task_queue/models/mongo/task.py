@@ -5,6 +5,10 @@ from dataclasses_json import dataclass_json, config
 from marshmallow import fields
 import pytz
 
+from ...common.generate_random_id import generate_random_id
+from ...wrapper.redis_client import RedisClient
+from ...wrapper.mongodb_client import MongoDBClient
+
 
 def from_iso_time(time):
     if time:
@@ -74,4 +78,54 @@ class Task():
             encoder=to_iso_time,
             decoder=from_iso_time,
             mm_field=fields.DateTime(format='iso')
-        ))
+        )
+    )
+
+    def workflow_precheck(self):
+        return (
+            len(self.parent_task_id) <= 0 and
+            len(self.workflow_id) <= 0
+        )
+
+    def is_stopped(self, namespace: str, mongodb_client: MongoDBClient):
+        db = mongodb_client.db()
+        col = db.workflow_status
+        workflow_status = col.find_one({
+            'workflow_id': self.workflow_id,
+            'namespace': namespace
+        })
+        if workflow_status:
+            return True
+        return False
+
+    def generate_workflow_id(self):
+        self.workflow_id = generate_random_id()
+
+    def is_planned_task(self):
+        return self.planned_date
+
+    def increase_rejected(self):
+        self.reject_counter = self.reject_counter + 1
+
+    def check_node_filter(self, node_name: str):
+        return (
+            len(self.node_names) > 0 and
+            node_name not in self.node_names
+        )
+
+    def generate_task_id(self):
+        self.task_id = generate_random_id()
+
+    def update_time(self):
+        self.received_date = datetime.now(tz=pytz.UTC)
+
+    def set_as_parent_task(self):
+        self.parent_task_id = self.task_id
+
+    def set_parent_task(self, other_task: 'Task'):
+        self.parent_task_id = other_task.task_id
+        self.workflow_id = other_task.workflow_id
+        self.node_names = other_task.node_names
+
+    def has_parent_task(self):
+        return len(self.parent_task_id) > 0

@@ -7,3 +7,4 @@ from dataclasses_json import dataclass_json
 class TaskLog():
     log_line: str = ''
     task_id: str = ''
+    workflow_id: str = ''

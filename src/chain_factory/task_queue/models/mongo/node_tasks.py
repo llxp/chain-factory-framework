@@ -9,4 +9,5 @@ from .registered_task import RegisteredTask
 @dataclass(frozen=False)
 class NodeTasks():
     node_name: str = ''
+    namespace: str = ''
     tasks: List[RegisteredTask] = field(default_factory=[])

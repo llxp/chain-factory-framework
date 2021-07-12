@@ -10,10 +10,11 @@ import json
 
 
 class BytesIOWrapper(io.BytesIO):
-    def __init__(self, task_id: str, mongodb_database: Database):
+    def __init__(self, task_id: str, workflow_id: str, mongodb_database: Database):
         super().__init__()
         self.task_id = task_id
         self.mongodb_database = mongodb_database
+        self.workflow_id = workflow_id
 
     def read(self, size: Optional[int] = ...) -> bytes:
         return super().read(size)
@@ -23,7 +24,7 @@ class BytesIOWrapper(io.BytesIO):
             sys.__stdout__.write(b.decode('utf-8'))
         decoded_log_line = b.decode('utf-8')
         decoded_log_line = self.remove_secrets(decoded_log_line)
-        task_log = TaskLog(task_id=self.task_id, log_line=decoded_log_line)
+        task_log = TaskLog(task_id=self.task_id, log_line=decoded_log_line, workflow_id=self.workflow_id)
         logs_table: Collection = self.mongodb_database.logs
         if task_log_to_external:
             # dataclass to json and parse to dict

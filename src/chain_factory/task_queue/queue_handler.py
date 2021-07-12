@@ -15,10 +15,8 @@ from .decorators.parse_catcher import parse_catcher
 LOGGER = logging.getLogger(__name__)
 
 
-class QueueHandler():
-    def __init__(
-        self
-    ):
+class QueueHandler:
+    def __init__(self):
         pass
 
     def init(
@@ -27,7 +25,7 @@ class QueueHandler():
         queue_name: str,
         amqp_username: str,
         amqp_password: str,
-        virtual_host: str = None
+        virtual_host: str = None,
     ):
         """
         Separate init logic to be able to use lazy initialisation
@@ -37,7 +35,7 @@ class QueueHandler():
             amqp_host=amqp_host,
             amqp_username=amqp_username,
             amqp_password=amqp_password,
-            virtual_host=virtual_host
+            virtual_host=virtual_host,
         )
 
     def stop_listening(self):
@@ -48,7 +46,7 @@ class QueueHandler():
         amqp_host: str,
         amqp_username: str,
         amqp_password: str,
-        virtual_host: str = None
+        virtual_host: str = None,
     ):
         """
         Connects to amqp
@@ -60,11 +58,11 @@ class QueueHandler():
                 port=5672,
                 username=amqp_username,
                 password=amqp_password,
-                amqp_type='consumer',
+                amqp_type="consumer",
                 callback=self._on_message,
                 ssl=False,
                 ssl_options=None,
-                virtual_host=virtual_host
+                virtual_host=virtual_host,
             )
         except AMQPConnectionError:
             traceback.print_exc(file=sys.stdout)
@@ -116,25 +114,27 @@ class QueueHandler():
         will be invoked, when a new task comes in
         """
         LOGGER.error(
-            'Error: on_task on queue_handler has been called. '
-            'Please implement the on_task method '
-            'in the derived class of queue_handler'
+            "Error: on_task on queue_handler has been called. "
+            "Please implement the on_task method "
+            "in the derived class of queue_handler"
         )
         raise NotImplementedError(
-            'Error: on_task on queue_handler has been called. '
-            'Please implement the on_task method in the derived '
-            'class of queue_handler'
+            "Error: on_task on queue_handler has been called. "
+            "Please implement the on_task method in the derived "
+            "class of queue_handler"
         )
 
     def _on_message(self, message: Message) -> str:
         """
         method will be invoked by the amqp library, when a new message comes in
         """
-        LOGGER.debug('callback_impl in queue_handler called')
+        LOGGER.debug("callback_impl in queue_handler called")
         # parse the message body to Task
         task: Task = self._parse_json(body=message.body)
-        LOGGER.debug(
-            'task: %s' % task.to_json() if task is not None else 'None')
+        LOGGER.debug("task: %s" % task.to_json() if task is not None else "None")
+        return self._on_message_check_task(task, message)
+
+    def _on_message_check_task(self, task: Union[Task, None], message: Message):
         if task is not None and len(task.name) > 0:
             return self._on_task(task=task, message=message)
         else:
@@ -154,20 +154,29 @@ class QueueHandler():
         checks the return value
         and returns them after logging to the amqp library
         """
-        LOGGER.debug('on_task will be called')
+        LOGGER.debug("on_task will be called")
         result: Task = self.on_task(task, message)
-        if result is not None:
-            LOGGER.debug('result: %s' % result.to_json())
-            # return the result as json to the queue
-            return result.to_json()
+        return self._on_task_check_task_result(result)
+
+    def _on_task_check_task_result(self, result: Union[Task, None]):
+        if result is None:
+            return self._on_none_task_result()
         else:
-            LOGGER.debug('result: None')
-            return ''
+            return self._on_task_result(result)
+
+    def _on_task_result(self, result: Task):
+        LOGGER.debug("result: %s" % result.to_json())
+        # return the result as json to the queue
+        return result.to_json()
+
+    def _on_none_task_result(self):
+        LOGGER.debug("result: None")
+        return ""
 
     def _on_task_error(self, message: Message) -> str:
         """
         will be invoked,
         when an error occured during parsing the message to a task
         """
-        LOGGER.error('Error, message is not parsable. Body: %s' % message.body)
-        return ''
+        LOGGER.error("Error, message is not parsable. Body: %s" % message.body)
+        return ""
