@@ -15,6 +15,7 @@ from .wrapper.amqp import AMQP, Message
 from .wrapper.redis_client import RedisClient
 from .wrapper.bytes_io_wrapper import BytesIOWrapper
 from .wrapper.mongodb_client import MongoDBClient
+from .wrapper.interruptable_thread import ThreadAbortException
 
 # settings
 from .common.settings import sticky_tasks, reject_limit
@@ -343,6 +344,10 @@ class TaskHandler(QueueHandler):
             if self.registered_tasks[task.name].task_repeat_on_timeout:
                 return self._handle_repeat_task(task, arguments, "Timeout")
             return self._handle_workflow_stopped("Timeout", task)
+        elif task_result is ThreadAbortException:
+            return self._save_task_result(task.task_id, "Aborted")
+        elif task_result is KeyboardInterrupt:
+            return self._save_task_result(task.task_id, "Stopped")
         else:  # task_result now can only be Task/None/Exception
             if task_result is None:
                 return self._handle_workflow_stopped("None", task)
@@ -376,7 +381,6 @@ class TaskHandler(QueueHandler):
         - runs the task
         - returns a function to handle the task result
         """
-        task = self._prepare_task(task)
         task_runner_result = self._run_task(task)
         if task_runner_result:
             task_result, arguments = task_runner_result
@@ -404,6 +408,7 @@ class TaskHandler(QueueHandler):
         """
         if task.workflow_precheck():
             return self._prepare_workflow(task, message)
+        task = self._prepare_task(task)
         if task.is_stopped(self.namespace, self.mongo_client):
             return self._handle_stopped(task, message)
         if task.is_planned_task():
@@ -418,7 +423,7 @@ class TaskHandler(QueueHandler):
 
     def _handle_stopped(self, task: Task, message: Message):
         print("_handle_stopped")
-        self._save_task_result(task.task_id, "stopped")
+        self._save_task_result(task.task_id, "Stopped")
         self.ack(message)
         return None
 

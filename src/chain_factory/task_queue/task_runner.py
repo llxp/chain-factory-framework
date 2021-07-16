@@ -58,7 +58,7 @@ class TaskThread(InterruptableThread):
             # will be raised if the thread should be forcefully aborted
             except ThreadAbortException as e:
                 LOGGER.exception(e)
-                self.result = None
+                self.result = ThreadAbortException
                 self.status = 3
                 return
             # catch all exceptions to prevent a crash of the node
@@ -71,10 +71,12 @@ class TaskThread(InterruptableThread):
 
     def stop(self):
         self.status = 3
+        self.result = KeyboardInterrupt
         super().interrupt()
         super().exit()
 
     def abort(self):
+        self.result = ThreadAbortException
         self.status = 4
         super().abort()
 
@@ -144,6 +146,7 @@ class ControlThread(InterruptableThread):
             if parsed_data.workflow_id == self.workflow_id:
                 for command in self.control_actions:
                     if parsed_data.command == command:
+                        print('executing command', command)
                         self.control_actions[command]()
                         return True
         return False
@@ -158,11 +161,17 @@ class TaskControlThread(ControlThread):
         namespace: str
     ):
         self.task_thread = task_thread
+        def stop():
+            print('stopping task')
+            self.task_thread.stop()
+        def abort():
+            print('stopping task')
+            self.task_thread.abort()
         ControlThread.__init__(
             self,
             workflow_id,
             {
-                'stop': self.task_thread.stop,
+                'stop': stop,
                 'abort': self.task_thread.abort
             },
             redis_client,

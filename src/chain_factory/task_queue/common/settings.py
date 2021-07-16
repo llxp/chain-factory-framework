@@ -50,6 +50,8 @@ incoming_block_list_redis_key = 'incoming_block_list'
 wait_block_list_redis_key = 'wait_block_list'
 # task control channel redis key
 task_control_channel_redis_key = 'task_control_channel'
+# node control channel redis key
+node_control_channel_redis_key = 'node_control_channel'
 # redis host
 redis_host = 'redis'
 # redis port
