@@ -1,13 +1,9 @@
 import logging
-from typing import List, Dict, Callable
-import inspect
-import json
 import time
-import sys
 from _thread import interrupt_main
 
 from .task_handler import TaskHandler
-from .task_runner import TaskRunner, ControlThread
+from .task_runner import ControlThread
 from .wrapper.interruptable_thread import ThreadAbortException
 from .wait_handler import WaitHandler
 from .blocked_handler import BlockedHandler
@@ -15,8 +11,6 @@ from .cluster_heartbeat import ClusterHeartbeat
 from .wrapper.redis_client import RedisClient
 # import the settings
 from .common.settings import \
-    unique_hostnames, \
-    force_register, \
     worker_count as default_worker_count, \
     redis_host as default_redis_host, \
     redis_password as default_redis_password, \
@@ -36,9 +30,6 @@ from .common.settings import \
     task_repeat_on_timeout as default_task_repeat_on_timeout, \
     namespace as default_namespace
 from .common.generate_random_id import generate_random_id
-from .models.mongo.registered_task import RegisteredTask
-from .models.mongo.node_tasks import NodeTasks
-from .models.mongo.task import Task
 from .wrapper.mongodb_client import MongoDBClient
 from .node_registration import NodeRegistration
 
@@ -243,7 +234,8 @@ class TaskQueue():
             redis_client=self.redis_client,
             task_queue_name=self.namespaced(self.task_queue),
             blocked_queue_name=self.namespaced(self.incoming_blocked_queue),
-            block_list_name=self.namespaced(self.incoming_block_list_redis_key),
+            block_list_name=self.namespaced(
+                self.incoming_block_list_redis_key),
             namespace=self.namespace
         )
 
@@ -329,8 +321,8 @@ class TaskQueue():
         except KeyboardInterrupt:
             self.stop_node()
             print('node halted')
-            try:
-                while run_sleep:
-                    time.sleep(0.01)  # keep mainthread running
-            except KeyboardInterrupt:
-                exit(0)
+            # try:
+            #     while run_sleep:
+            #         time.sleep(0.01)  # keep mainthread running
+            # except KeyboardInterrupt:
+            #     exit(0)

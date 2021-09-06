@@ -19,19 +19,17 @@ from .wrapper.interruptable_thread import ThreadAbortException
 
 # settings
 from .common.settings import sticky_tasks, reject_limit
-from .common.settings import task_status_redis_key
-from .common.settings import wait_time, workflow_status_redis_key
+from .common.settings import wait_time
 from .common.settings import incoming_block_list_redis_key
 
 # common
-from .common.task_return_type import ArgumentType, TaskReturnType, TaskRunnerReturnType
+from .common.task_return_type import \
+    ArgumentType, TaskReturnType, TaskRunnerReturnType
 
 # models
 from .models.mongo.task import Task
 from .models.mongo.workflow import Workflow
 from .models.mongo.task_workflow_association import TaskWorkflowAssociation
-from .models.redis.task_status import TaskStatus
-from .models.redis.workflow_status import WorkflowStatus
 
 
 LOGGER = logging.getLogger(__name__)
@@ -60,7 +58,12 @@ class TaskHandler(QueueHandler):
         namespace: str,
     ):
         QueueHandler.init(
-            self, amqp_host, queue_name, amqp_username, amqp_password, namespace
+            self,
+            amqp_host,
+            queue_name,
+            amqp_username,
+            amqp_password,
+            namespace
         )
         self.node_name: str = node_name
         self.redis_client: RedisClient = redis_client
@@ -75,9 +78,12 @@ class TaskHandler(QueueHandler):
             amqp_password=amqp_password,
         )
         self.block_list = ListHandler(
-            list_name=namespace + "_" + incoming_block_list_redis_key,
+            list_name=self.namespaced(incoming_block_list_redis_key),
             redis_client=redis_client,
         )
+
+    def namespaced(self, key: str):
+        return self.namespace if self.namespace else "" + "_" + key
 
     def update_task_timeout(self):
         for task in self.registered_tasks:
@@ -214,26 +220,31 @@ class TaskHandler(QueueHandler):
 
     def _save_task_workflow_association(self, task: Task):
         """
-        Report the assignment from workflow_id to task_id to the redis database
+        Report the assignment from workflow_id to task_id to the database
         """
-        if task.arguments:
-            arguments_excluder = self._ArgumentExcluder(task.arguments)
-            arguments_excluder.exclude()
-            task.arguments = arguments_excluder.arguments
-            association = TaskWorkflowAssociation(
-                workflow_id=task.workflow_id, task=task, node_name=self.node_name
-            )
-            task_to_workflow_dict = TaskHandler._dataclass_to_dict(association)
-            self.mongo_client.db().tasks.insert_one(task_to_workflow_dict)
-            if arguments_excluder.arguments_copy:
-                task.arguments = arguments_excluder.arguments_copy
+        arguments_excluder = self._ArgumentExcluder(task.arguments)
+        arguments_excluder.exclude()
+        task.arguments = arguments_excluder.arguments
+        association = TaskWorkflowAssociation(
+            workflow_id=task.workflow_id,
+            task=task,
+            node_name=self.node_name
+        )
+        task_to_workflow_dict = TaskHandler._dataclass_to_dict(association)
+        self.mongo_client.db().tasks.insert_one(task_to_workflow_dict)
+        if arguments_excluder.arguments_copy:
+            task.arguments = arguments_excluder.arguments_copy
 
     def _run_task(self, task: Task) -> TaskRunnerReturnType:
         """
         Runs the specified task and returns the result of the task function
         """
         # buffer to redirect stdout/stderr to the database
-        log_buffer = BytesIOWrapper(task.task_id, task.workflow_id, self.mongo_client.db())
+        log_buffer = BytesIOWrapper(
+            task.task_id,
+            task.workflow_id,
+            self.mongo_client.db()
+        )
         # run the task
         return self.registered_tasks[task.name].run(
             task.arguments, task.workflow_id, log_buffer
@@ -271,7 +282,11 @@ class TaskHandler(QueueHandler):
             new_task.node_names = [self.node_name]
         return new_task
 
-    def _return_error_task(self, task: Task, new_arguments: Dict[str, str]) -> None:
+    def _return_error_task(
+        self,
+        task: Task,
+        new_arguments: Dict[str, str]
+    ) -> None:
         """
         Reenqueue the current task to the wait queue if the current task failed
         """
@@ -281,7 +296,7 @@ class TaskHandler(QueueHandler):
         task.set_as_parent_task()
         # remove current task id on error
         # generate a new one on next run
-        del task.task_id
+        task.cleanup_task()
         task.arguments = new_arguments
         # send task to wait queue
         self.amqp_wait.send(task.to_json())
@@ -307,16 +322,17 @@ class TaskHandler(QueueHandler):
     def _mark_workflow_as_stopped(self, workflow_id: str, status: str):
         col = self.mongo_client.db().workflow_status
         if not (
-            col.find_one({"workflow_id": workflow_id, "namespace": self.namespace})
+            col.find_one({
+                "workflow_id": workflow_id,
+                "namespace": self.namespace
+            })
         ):
-            col.insert_one(
-                {
-                    "workflow_id": workflow_id,
-                    "namespace": self.namespace,
-                    "status": status,
-                    "created_date": datetime.now(pytz.UTC),
-                }
-            )
+            col.insert_one({
+                "workflow_id": workflow_id,
+                "namespace": self.namespace,
+                "status": status,
+                "created_date": datetime.now(pytz.UTC),
+            })
 
     def _handle_workflow_stopped(self, result: str, task: Task):
         self._save_task_result(task.task_id, result)
@@ -324,7 +340,12 @@ class TaskHandler(QueueHandler):
         self._mark_workflow_as_stopped(task.workflow_id, result)
         return None  # do nothing
 
-    def _handle_repeat_task(self, task: Task, arguments: ArgumentType, result: str):
+    def _handle_repeat_task(
+        self,
+        task: Task,
+        arguments: ArgumentType,
+        result: str
+    ):
         self._save_task_result(task.task_id, result)
         # the result is False, indicating an error
         # => schedule the task to the waiting queue
@@ -354,7 +375,8 @@ class TaskHandler(QueueHandler):
             # Exception means an exception occured during the task run
             elif task_result is Exception:
                 return self._handle_workflow_stopped("Exception", task)
-            # Task means, a new/next task has been returned, to be scheduled to the queue
+            # Task means, a new/next task has been returned,
+            # to be scheduled to the queue
             else:
                 self._save_task_result(task.task_id, "Task")
                 return self._return_new_task(task, arguments, task_result)
@@ -372,7 +394,11 @@ class TaskHandler(QueueHandler):
         self._prepare_task_in_database(task)
         return task
 
-    def _handle_run_task(self, task: Task, message: Message) -> Union[Task, None]:
+    def _handle_run_task(
+        self,
+        task: Task,
+        message: Message
+    ) -> Union[Task, None]:
         """
         will be executed, when the task is valid,
         which means it has a valid workflow id
@@ -385,7 +411,8 @@ class TaskHandler(QueueHandler):
         if task_runner_result:
             task_result, arguments = task_runner_result
             # handle task result and return new Task
-            return self._handle_task_result(task_result, arguments, message, task)
+            return self._handle_task_result(
+                task_result, arguments, message, task)
         else:
             # error occured converting the arguments from Dict[str, str]
             # to Dict[str, Any] -> to the actual type expected from the task

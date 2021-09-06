@@ -7,7 +7,6 @@ import time
 import stdio_proxy
 import io
 import threading
-import abc
 
 from .models.mongo.task import Task
 from .models.redis.task_control_message import TaskControlMessage
@@ -35,7 +34,7 @@ class TaskThread(InterruptableThread):
         InterruptableThread.__init__(self)
         self.callback = callback
         self.arguments = arguments
-        self.result: TaskRunnerReturnType = None
+        #self.result: TaskRunnerReturnType = None
         # current task status
         # 0 means not run
         # 1 means started
@@ -117,7 +116,8 @@ class ControlThread(InterruptableThread):
                     if self._control_task_thread_handle_channel(msg):
                         break
                 time.sleep(0.001)
-            self.redis_client._pubsub_connection.unsubscribe(self.control_channel)
+            self.redis_client._pubsub_connection.unsubscribe(
+                self.control_channel)
         except ThreadAbortException:
             return
 
@@ -161,11 +161,13 @@ class TaskControlThread(ControlThread):
         namespace: str
     ):
         self.task_thread = task_thread
+
         def stop():
             print('stopping task')
             self.task_thread.stop()
+
         def abort():
-            print('stopping task')
+            print('aborting task')
             self.task_thread.abort()
         ControlThread.__init__(
             self,

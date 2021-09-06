@@ -129,3 +129,6 @@ class Task():
 
     def has_parent_task(self):
         return len(self.parent_task_id) > 0
+
+    def cleanup_task(self):
+        del self.task_id

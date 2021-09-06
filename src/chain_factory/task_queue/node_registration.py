@@ -31,7 +31,7 @@ class NodeRegistration():
             node_name/task_name
         """
         already_registered_node = self._node_already_registered()
-        print(already_registered_node)
+        # print(already_registered_node)
         if already_registered_node is not None:
             if unique_hostnames:  # setting
                 self._raise_node_already_registered()

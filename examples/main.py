@@ -1,14 +1,14 @@
 import sys
 import pathlib
-sys.path.append(pathlib.Path(__file__).parent.parent.absolute().as_posix() + '/src')
-from chain_factory.task_queue.models.mongo.task import Task
 import time
 import os
+import logging
+sys.path.append(pathlib.Path(__file__).parent.parent.absolute().as_posix() + '/src')
+from chain_factory.task_queue.models.mongo.task import Task
 
 from chain_factory.task_queue.task_queue import TaskQueue
 #import hanging_threads
 
-import logging
 FORMAT = (
     '%(asctime)s.%(msecs)03d %(levelname)8s: '
     '[%(pathname)10s:%(lineno)s - '
@@ -39,7 +39,7 @@ task_queue.mongodb_connection = os.getenv(
     'mongodb://root:example@' + host + '/orchestrator_db?authSource=admin'
 )
 task_queue.worker_count = 10
-task_queue.namespace = None
+task_queue.namespace = "root"
 
 counter = 0
 
@@ -67,9 +67,19 @@ def simulate(times: int, i: int, exclude=['i']):
     print('counter: ' + str(counter))
     print(type(times))
     # for i in range(0, times):
-    time.sleep(times)
+    # time.sleep(times)
     print(" [x] Done %d" % i)
+    for x in range(0, times):
+        print(x)
+        time.sleep(1)
     return None
+
+
+@task_queue.task('test_task')
+def test_task():
+    print("test task")
+    print('Test02<s>SECRET</s>')
+    return 'simulate', {'i': 0, 'times': 30}
 
 
 @task_queue.task('send_feedback')

@@ -34,7 +34,10 @@ class ListHandler:
         if self.redis_client is not None:
             list_item_container = ListItemContainer()
             # the from_json method comes from the dataclass_json decorator
-            return self.redis_client.set(self.list_name, list_item_container.to_json())
+            return self.redis_client.set(
+                self.list_name,
+                list_item_container.to_json()
+            )
         return False
 
     def init(self):
@@ -46,7 +49,10 @@ class ListHandler:
             current_list = self.get()
             if current_list is None:
                 list_item_container = ListItemContainer()
-                self.redis_client.set(self.list_name, list_item_container.to_json())
+                self.redis_client.set(
+                    self.list_name,
+                    list_item_container.to_json()
+                )
 
     def add(self, list_item: ListItem) -> bool:
         """
@@ -62,7 +68,8 @@ class ListHandler:
                 current_list.list_items.append(list_item)
             else:
                 return False
-            return self.redis_client.set(self.list_name, current_list.to_json())
+            return self.redis_client.set(
+                self.list_name, current_list.to_json())
         return False
 
     def remove(self, list_item: ListItem) -> bool:
@@ -79,7 +86,8 @@ class ListHandler:
                 current_list.list_items.remove(list_item)
             else:
                 return False
-            return self.redis_client.set(self.list_name, current_list.to_json())
+            return self.redis_client.set(
+                self.list_name, current_list.to_json())
         return False
 
     def get(self) -> ListItemContainer:

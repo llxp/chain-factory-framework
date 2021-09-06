@@ -1,4 +1,3 @@
-from _thread import start_new_thread
 from threading import Thread
 from datetime import datetime
 import time
@@ -43,7 +42,7 @@ class ClusterHeartbeat():
     def _redis_key(self):
         return \
             heartbeat_redis_key + '_' + \
-            self.namespace + '_' + \
+            (self.namespace if self.namespace else '') + '_' + \
             self.node_name
 
     def _json_heartbeat(self):

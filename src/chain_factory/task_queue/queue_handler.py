@@ -131,10 +131,15 @@ class QueueHandler:
         LOGGER.debug("callback_impl in queue_handler called")
         # parse the message body to Task
         task: Task = self._parse_json(body=message.body)
-        LOGGER.debug("task: %s" % task.to_json() if task is not None else "None")
+        LOGGER.debug(
+            "task: %s" % task.to_json() if task is not None else "None")
         return self._on_message_check_task(task, message)
 
-    def _on_message_check_task(self, task: Union[Task, None], message: Message):
+    def _on_message_check_task(
+        self,
+        task: Union[Task, None],
+        message: Message
+    ):
         if task is not None and len(task.name) > 0:
             return self._on_task(task=task, message=message)
         else:
