@@ -1,4 +1,5 @@
 from threading import Thread
+from _thread import interrupt_main
 from datetime import datetime
 import time
 import pytz
@@ -53,10 +54,14 @@ class ClusterHeartbeat():
         ).to_json()
 
     def _set_heartbeat(self):
-        self._redis_client.set(
+        result = self._redis_client.set(
             self._redis_key(),
             self._json_heartbeat()
         )
+        if not result:
+            # interrupt the main thread, if the heartbeat fails
+            # so that the node can be cleanly shutdown and restarted
+            interrupt_main()
 
     def _heartbeat_thread(self):
         """

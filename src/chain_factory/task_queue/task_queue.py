@@ -1,6 +1,7 @@
 import logging
 import time
 from _thread import interrupt_main
+from typing import Dict
 
 from .task_handler import TaskHandler
 from .task_runner import ControlThread
@@ -9,6 +10,9 @@ from .wait_handler import WaitHandler
 from .blocked_handler import BlockedHandler
 from .cluster_heartbeat import ClusterHeartbeat
 from .wrapper.redis_client import RedisClient
+from .credentials_pool import CredentialsPool
+from .task_starter import TaskStarter
+from .task_waiter import TaskWaiter
 # import the settings
 from .common.settings import \
     worker_count as default_worker_count, \
@@ -39,32 +43,93 @@ class TaskQueue():
     - Initialises the framework
     - Connects to redis, mongodb and the rabbitmq queue broker
     """
-    def __init__(self):
+
+    def __init__(self, endpoint: str, username: str, password: str):
         """
         Initialises the properties using the default values from the settings
         """
         self.node_name = generate_random_id()
         self.worker_count = default_worker_count
-        self.redis_host = default_redis_host
-        self.redis_port = default_redis_port
-        self.redis_db = default_redis_db
-        self.redis_password = default_redis_password
-        self.mongodb_connection: str = default_mongodb_connection
-        self.amqp_username: str = default_amqp_username
-        self.amqp_password: str = default_amqp_password
-        self.amqp_host = default_amqp_host
         self.task_handler = TaskHandler()
-        self.task_queue = default_task_queue
-        self.wait_queue = default_wait_queue
-        self.incoming_blocked_queue = default_incoming_blocked_queue
-        self.wait_blocked_queue = default_wait_blocked_queue
+        # redis keys
         self.incoming_block_list_redis_key = \
             default_incoming_block_list_redis_key
         self.wait_block_list_redis_key = \
             default_wait_block_list_redis_key
+        # task timeout
         self.task_timeout = default_task_timeout
         self.task_repeat_on_timeout = default_task_repeat_on_timeout
+        # namespace
         self.namespace = default_namespace
+        # redis credentials
+        self.redis_host = default_redis_host
+        self.redis_port = default_redis_port
+        self.redis_db = default_redis_db
+        self.redis_password = default_redis_password
+        # mongodb credentials
+        self.mongodb_connection: str = default_mongodb_connection
+        # rabbitmq credentials
+        self.amqp_username: str = default_amqp_username
+        self.amqp_password: str = default_amqp_password
+        self.amqp_host = default_amqp_host
+        # queue names
+        self.task_queue = default_task_queue
+        self.wait_queue = default_wait_queue
+        self.incoming_blocked_queue = default_incoming_blocked_queue
+        self.wait_blocked_queue = default_wait_blocked_queue
+        # task starter
+        self._task_starter: Dict[TaskStarter] = {}
+        # credentials pool
+        self._credentials_pool = CredentialsPool(
+            endpoint, username, password, [self.namespace]
+        )
+
+    def start_new_task(self, namespace: str, task_name: str, arguments: dict):
+        credentials = self._credentials_pool.get_credentials(
+            namespace).rabbitmq()
+        try:
+            self._task_starter[namespace].start_new_task(
+                task_name, arguments
+            )
+        except KeyError:
+            self._task_starter[namespace] = TaskStarter(
+                namespace,
+                self.amqp_host,
+                credentials['username'],
+                credentials['password'],
+            )
+            self._task_starter[namespace].start_new_task(
+                task_name, arguments
+            )
+
+    def _mongodb_client_by_namespace(self, credentials, namespace):
+        connection_string = \
+            'mongodb://{}:{}@{}/{}?authSource=admin'.format(
+                credentials['username'],
+                credentials['password'],
+                self.amqp_host,  # use the same host as the rabbitmq server
+                credentials['database']
+            )
+        mongodb_client = MongoDBClient(connection_string)
+        return mongodb_client
+
+    def wait_for_task(self, namespace: str, task_name: str, arguments: dict):
+        """
+        - waits for the task to complete
+        """
+        credentials = self._credentials_pool.get_credentials(
+            namespace).mongodb()
+        try:
+            self._task_waiter[namespace].wait_for_task_name(
+                task_name, arguments
+            )
+        except KeyError:
+            self._task_waiter[namespace] = TaskWaiter(
+                self._mongodb_client_by_namespace(credentials, namespace)
+            )
+            self._task_waiter[namespace].wait_for_task_name(
+                task_name, arguments
+            )
 
     def init(self):
         """
@@ -166,6 +231,7 @@ class TaskQueue():
         -> task handler
         -> cluster heartbeat
         """
+        self._get_credentials()
         self._init_wait_handler()
         self._init_incoming_blocked_handler()
         self._init_wait_blocked_handler()
@@ -306,7 +372,6 @@ class TaskQueue():
         self.init()
         self.task_handler.task_set_redis_client()
         self._listen_control_messages()
-        # self._register_tasks()
         self._node_registration.register()
         self.task_handler.scale(self.worker_count)
         self.cluster_heartbeat.start_heartbeat()
