@@ -2,7 +2,7 @@
 
 import unittest
 from unittest.mock import patch
-import time
+from time import sleep
 
 from src.task_queue.wrapper.amqp import AMQP, Message
 
@@ -98,7 +98,7 @@ class AMQPTest(unittest.TestCase):
         def callback_ack(message: Message):
             amqp.ack(message)
             print('callback_ack called')
-            self.assertIsNone(time.sleep(30))
+            self.assertIsNone(sleep(30))
             self.assertEqual(amqp.message_count(), 0)
 
         with patch.object(self, 'callback', side_effect=callback_ack) as mock:
@@ -115,8 +115,6 @@ class AMQPTest(unittest.TestCase):
             amqp.close()
             amqp.callback = []
             mock.assert_called_once_with(Message(body='{\'test_key\':\'test_value\'}', channel=amqp.consumer_list[0].channel, delivery_tag=1))
-
-        
 
 
 if __name__ == '__main__':

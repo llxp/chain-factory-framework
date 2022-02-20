@@ -1,19 +1,18 @@
 import unittest
-import pytz
-import time
+from time import sleep
 import sys
 from unittest.mock import patch
 from datetime import datetime
 from typing import Callable
 
-from src.task_queue.queue_handler import QueueHandler
-from src.task_queue.wrapper.amqp import Message, AMQP
+from framework.src.chain_factory.task_queue.queue_handler import QueueHandler
+from chain_factory.task_queue.wrapper.rabbitmq import Message, RabbitMQ
 from amqpstorm import AMQPConnectionError
-from src.task_queue.models.mongo.task import Task
+from framework.src.chain_factory.task_queue.models.mongodb_models import Task
 
 
 test_str_empty = ''
-test_str_valid = Task(name='test').to_json()
+test_str_valid = Task(name='test').json()
 test_str_invalid_object = '{"123":"123"}'
 test_str_invalid_json = '{123:123}'
 test_str_empty_object = '{}'
@@ -48,7 +47,7 @@ class MockedQueueHandler(QueueHandler):
             pass
 
     def _connect(self, amqp_host: str, amqp_username: str, amqp_password: str):
-        self.amqp = MockedQueueHandler.AMQP()
+        self.rabbitmq = MockedQueueHandler.AMQP()
 
 
 mocked_instance = MockedQueueHandler()
@@ -142,7 +141,7 @@ class QueueHandlerTest(unittest.TestCase):
                 mock_task_valid,
                 message_valid
             )
-            assert return_value == mock_task_valid.to_json()
+            assert return_value == mock_task_valid.json()
 
         # None return test
         with patch.object(
@@ -160,33 +159,33 @@ class QueueHandlerTest(unittest.TestCase):
 
     def test_listen(self):
         with patch.object(
-            mocked_instance.amqp, 'listen', return_value=None
+            mocked_instance.rabbitmq, 'listen', return_value=None
         ) as mock:
             mocked_instance.listen()
             mock.assert_called()
 
     def test_ack(self):
         with patch.object(
-            mocked_instance.amqp, 'ack', return_value=None
+            mocked_instance.rabbitmq, 'ack', return_value=None
         ) as mock:
             mocked_instance.ack(message=message_empty)
             mock.assert_called_with(message=message_empty)
 
         with patch.object(
-            mocked_instance.amqp, 'ack', return_value=None
+            mocked_instance.rabbitmq, 'ack', return_value=None
         ) as mock:
             mocked_instance.ack(message=message_valid)
             mock.assert_called_with(message=message_valid)
 
     def test_nack(self):
         with patch.object(
-            mocked_instance.amqp, 'nack', return_value=None
+            mocked_instance.rabbitmq, 'nack', return_value=None
         ) as mock:
             mocked_instance.nack(message=message_empty)
             mock.assert_called_with(message=message_empty)
 
         with patch.object(
-            mocked_instance.amqp, 'nack', return_value=None
+            mocked_instance.rabbitmq, 'nack', return_value=None
         ) as mock:
             mocked_instance.nack(message=message_valid)
             mock.assert_called_with(message=message_valid)
@@ -205,7 +204,7 @@ class QueueHandlerTest(unittest.TestCase):
             mock.assert_called_with(message=message_valid)
 
     def test_send_to_queue(self):
-        now_mocked = datetime.now(pytz.UTC)
+        now_mocked = datetime.utcnow()
         mocked_queue = MockedQueueHandler.AMQP()
         updated_mock_task_valid = mock_task_valid
         updated_mock_task_valid.received_date = now_mocked
@@ -220,11 +219,11 @@ class QueueHandlerTest(unittest.TestCase):
                     amqp_queue=mocked_queue
                 )
                 mock2.assert_called()
-            mock.assert_called_with(message=updated_mock_task_valid.to_json())
+            mock.assert_called_with(message=updated_mock_task_valid.json())
 
     def test__now(self):
-        now = datetime.now(pytz.UTC)
-        time.sleep(0.01)
+        now = datetime.utcnow()
+        sleep(0.01)
         assert now != mocked_instance._now()
 
     def test_on_task(self):
@@ -235,7 +234,7 @@ class QueueHandlerTest(unittest.TestCase):
 
     def test__connect(self):
         with patch.object(
-            AMQP, '__init__', return_value=None
+            RabbitMQ, '__init__', return_value=None
         ) as mock:
             with patch.object(
                 QueueHandler, '_on_message', return_value=None
@@ -272,7 +271,7 @@ class QueueHandlerTest(unittest.TestCase):
             raise AMQPConnectionError('Error')
 
         with patch.object(
-            AMQP,
+            RabbitMQ,
             '__init__',
             return_value=None,
             side_effect=amqp_init

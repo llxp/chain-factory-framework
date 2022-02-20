@@ -1,20 +1,17 @@
-import logging
-import sys
-import traceback
+from sys import stdout
+from traceback import print_exc
+from logging import exception
+from typing import Tuple, Type
 
-LOGGER = logging.getLogger(__name__)
 
-
-def parse_catcher(errors=(Exception, )):
+def parse_catcher(errors: Tuple[Type[Exception]] = (Exception, )):
     def decorator(func):
         def new_func(*args, **kwargs):
             try:
                 return func(*args, **kwargs)
             except errors as e:
-                traceback.print_exc(file=sys.stdout)
-                # logger.error('Got error! ' % repr(e))
-                if len(LOGGER.handlers) > 0:
-                    LOGGER.exception(e)
+                print_exc(file=stdout)
+                exception(e)
                 return None
 
         return new_func

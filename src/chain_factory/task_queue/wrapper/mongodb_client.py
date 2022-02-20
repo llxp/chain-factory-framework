@@ -1,6 +1,7 @@
-from pymongo import MongoClient
+from logging import error
+from odmantic import AIOEngine
+from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo.errors import ConnectionFailure
-from pymongo.database import Database
 
 
 class MongoDBClient():
@@ -8,15 +9,16 @@ class MongoDBClient():
         self,
         uri: str
     ):
-        self.client = MongoClient(uri, serverSelectionTimeoutMS=5000)
-        self._check_connection()
+        client = AsyncIOMotorClient(uri, serverSelectionTimeoutMS=5000)
+        self.client = AIOEngine(client)
 
-    def _check_connection(self):
+    async def check_connection(self):
         try:
             # The ismaster command is cheap and does not require auth.
-            self.client.admin.command('ismaster')
+            await self.client.client.admin.command('ismaster')
         except ConnectionFailure:
-            print("Mongodb Server not available")
+            error("Mongodb Server not available")
+            raise
 
-    def db(self) -> Database:
-        return self.client.get_default_database()
+    async def close(self):
+        await self.client.close()

@@ -1,22 +1,23 @@
-import sys
-import pathlib
-import time
-import os
-import logging
-sys.path.append(pathlib.Path(__file__).parent.parent.absolute().as_posix() + '/src')
-from chain_factory.task_queue.models.mongo.task import Task
+from logging import basicConfig, DEBUG
+from os import getenv
+from time import sleep
+from pathlib import Path
+from sys import path
+from framework.src.chain_factory.task_queue.models.mongodb_models import Task
+from framework.src.chain_factory.task_queue.task_queue import TaskQueue
+path.append(Path(
+    __file__).parent.parent.absolute().as_posix() + '/src')
 
-from chain_factory.task_queue.task_queue import TaskQueue
-#import hanging_threads
+# import hanging_threads
 
 FORMAT = (
     '%(asctime)s.%(msecs)03d %(levelname)8s: '
     '[%(pathname)10s:%(lineno)s - '
     '%(funcName)20s() ] %(message)s'
 )
-logging.basicConfig(
+basicConfig(
     filename='logfile.log',
-    level=logging.DEBUG,
+    level=DEBUG,
     format=FORMAT,
     datefmt='%Y-%m-%d %H:%M:%S'
 )
@@ -25,16 +26,16 @@ logging.basicConfig(
 task_queue = TaskQueue()
 host = '127.0.0.1'
 # the current node name. Should be later changed to an environment variable
-task_queue.node_name = os.getenv('HOSTNAME', 'devnode01')
+task_queue.node_name = getenv('HOSTNAME', 'devnode01')
 # the amqp endpoint. Should later be changed to an environment variable
-task_queue.amqp_host = os.getenv('RABBITMQ_HOST', host)
+task_queue.amqp_host = getenv('RABBITMQ_HOST', host)
 # the redis endpoint. Should later be changed to an environment variable
-task_queue.redis_host = os.getenv('REDIS_HOST', host)
+task_queue.redis_host = getenv('REDIS_HOST', host)
 # the amqp username ==> guest is the default
-task_queue.amqp_username = os.getenv('RABBITMQ_USER', 'guest')
+task_queue.amqp_username = getenv('RABBITMQ_USER', 'guest')
 # the amqp passwort ==> guest is the default
-task_queue.amqp_password = os.getenv('RABBITMQ_PASSWORD', 'guest')
-task_queue.mongodb_connection = os.getenv(
+task_queue.amqp_password = getenv('RABBITMQ_PASSWORD', 'guest')
+task_queue.mongodb_connection = getenv(
     'MONGODB_CONNECTION_URI',
     'mongodb://root:example@' + host + '/orchestrator_db?authSource=admin'
 )
@@ -67,11 +68,11 @@ def simulate(times: int, i: int, exclude=['i']):
     print('counter: ' + str(counter))
     print(type(times))
     # for i in range(0, times):
-    # time.sleep(times)
+    # sleep(times)
     print(" [x] Done %d" % i)
     for x in range(0, times):
         print(x)
-        time.sleep(1)
+        sleep(1)
     return None
 
 
@@ -129,5 +130,5 @@ def chained_task_03(arg2: str):
 if __name__ == '__main__':
     task_queue.listen()  # start the node
 
-    # time.sleep(1000)
+    # sleep(1000)
     task_queue.run_main_loop()

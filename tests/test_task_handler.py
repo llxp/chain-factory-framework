@@ -1,48 +1,48 @@
 import unittest
 from unittest.mock import patch
 
-from src.task_queue.task_handler import TaskHandler, ListHandler
-from src.task_queue.models.mongo.task import Task
-from src.task_queue.models.redis.task_status import TaskStatus
-from src.task_queue.queue_handler import QueueHandler
-from src.task_queue.wrapper.amqp import Message, AMQP
-from src.task_queue.common.settings import \
+from framework.src.chain_factory.task_queue.task_handler import TaskHandler, ListHandler
+from framework.src.chain_factory.task_queue.models.mongodb_models import Task
+from framework.src.chain_factory.task_queue.models.redis_models import TaskStatus
+from framework.src.chain_factory.task_queue.queue_handler import QueueHandler
+from chain_factory.task_queue.wrapper.rabbitmq import Message, RabbitMQ
+from framework.src.chain_factory.task_queue.common.settings import \
     task_status_redis_key, incoming_block_list_redis_key
-import src.task_queue.common.generate_random_id
+import framework.src.chain_factory.task_queue.common.generate_random_id
 
 
 def get_mocked_instance():
     with patch.object(
-            AMQP, '__init__', return_value=None
-        ):
+        RabbitMQ, '__init__', return_value=None
+    ):
+        with patch.object(
+            TaskHandler, '_init_amqp_publishers', return_value=None
+        ) as mock1:
             with patch.object(
-                TaskHandler, '_init_amqp_publishers', return_value=None
-            ) as mock1:
-                with patch.object(
-                    ListHandler, '__init__', return_value=None
-                ) as mock2:
-                    redis_client = MockedRedisClient()
-                    mocked_instance = TaskHandler(
-                        node_name='',
-                        amqp_host='',
-                        amqp_username='',
-                        amqp_password='',
-                        redis_client=redis_client,
-                        mongodb_client=None,
-                        queue_name='',
-                        wait_queue_name='',
-                        blocked_queue_name=''
-                    )
-                    mock2.assert_called_with(
-                        list_name=incoming_block_list_redis_key,
-                        redis_client=redis_client
-                    )
-                    mock1.assert_called_with(
-                        amqp_host='',
-                        amqp_username='',
-                        amqp_password=''
-                    )
-                    return mocked_instance
+                ListHandler, '__init__', return_value=None
+            ) as mock2:
+                redis_client = MockedRedisClient()
+                mocked_instance = TaskHandler(
+                    node_name='',
+                    amqp_host='',
+                    amqp_username='',
+                    amqp_password='',
+                    redis_client=redis_client,
+                    mongodb_client=None,
+                    queue_name='',
+                    wait_queue_name='',
+                    blocked_queue_name=''
+                )
+                mock2.assert_called_with(
+                    list_name=incoming_block_list_redis_key,
+                    redis_client=redis_client
+                )
+                mock1.assert_called_with(
+                    amqp_host='',
+                    amqp_username='',
+                    amqp_password=''
+                )
+                return mocked_instance
 
 
 class MockedRedisClient():
@@ -92,7 +92,7 @@ class TaskHandlerTest(unittest.TestCase):
 
     def test___init__(self):
         with patch.object(
-            AMQP, '__init__', return_value=None
+            RabbitMQ, '__init__', return_value=None
         ):
             with patch.object(
                 TaskHandler, '_init_amqp_publishers', return_value=None
@@ -128,7 +128,7 @@ class TaskHandlerTest(unittest.TestCase):
         amqp_username = ''
         amqp_password = ''
         with patch.object(
-            AMQP, '__init__', return_value=None
+            RabbitMQ, '__init__', return_value=None
         ) as mock:
             TaskHandler._init_amqp_publishers(
                 self=mocked_instance,
@@ -146,12 +146,12 @@ class TaskHandlerTest(unittest.TestCase):
                 ssl=False,
                 ssl_options=None
             )
-            assert mocked_instance.amqp_wait is not None
+            assert mocked_instance.rabbitmq_wait is not None
             assert mocked_instance.amqp_blocked is not None
 
     def test__save_task_result(self):
         with patch.object(
-            AMQP, '__init__', return_value=None
+            RabbitMQ, '__init__', return_value=None
         ):
             with patch.object(
                 TaskHandler, '_init_amqp_publishers', return_value=None
@@ -182,7 +182,7 @@ class TaskHandlerTest(unittest.TestCase):
                         mocked_instance._save_task_result(
                             task_id=task_id, result=status)
                         mock.assert_called_with(
-                            task_status_redis_key, task_status.to_json())
+                            task_status_redis_key, task_status.json())
 
     def test__parse_task_output(self):
 

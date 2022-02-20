@@ -1,17 +1,19 @@
 from typing import Callable, Dict, Any, Union
-import json
-import logging
-import traceback
-import sys
-import time
-import stdio_proxy
-import io
-import threading
+from json import dumps
+from logging import error, info, debug, exception, warning
+from traceback import print_exc
+from sys import stdout
+from time import sleep, time
+from stdio_proxy import redirect_stdout, redirect_stderr
+from io import BytesIO
+from threading import Lock
+from asyncio import run as run_asyncio
 
-from .models.mongo.task import Task
-from .models.redis.task_control_message import TaskControlMessage
-from .wrapper.interruptable_thread import InterruptableThread
-from .wrapper.interruptable_thread import ThreadAbortException
+from .models.mongodb_models import Task
+from .models.redis_models import TaskControlMessage
+from .wrapper.interruptable_thread import (
+    InterruptableThread, ThreadAbortException
+)
 from .wrapper.redis_client import RedisClient
 from .common.task_return_type import \
     ArgumentType, CallbackType, \
@@ -19,8 +21,6 @@ from .common.task_return_type import \
     NormalizedTaskReturnType
 from .common.settings import \
     task_control_channel_redis_key
-
-LOGGER = logging.getLogger(__name__)
 
 
 class TaskThread(InterruptableThread):
@@ -34,7 +34,7 @@ class TaskThread(InterruptableThread):
         InterruptableThread.__init__(self)
         self.callback = callback
         self.arguments = arguments
-        #self.result: TaskRunnerReturnType = None
+        # self.result: TaskRunnerReturnType = None
         # current task status
         # 0 means not run
         # 1 means started
@@ -47,23 +47,23 @@ class TaskThread(InterruptableThread):
     def run(self):
         # redirect stdout and stderr to the buffer
         with \
-            stdio_proxy.redirect_stdout(self.buffer), \
-                stdio_proxy.redirect_stderr(self.buffer):
+            redirect_stdout(self.buffer), \
+                redirect_stderr(self.buffer):
             try:
                 self.status = 1
-                self.result = self.callback(**self.arguments)
+                self.result = run_asyncio(self.callback(**self.arguments))
                 self.status = 2
             # catch ThreadAbortException,
             # will be raised if the thread should be forcefully aborted
             except ThreadAbortException as e:
-                LOGGER.exception(e)
+                exception(e)
                 self.result = ThreadAbortException
                 self.status = 3
                 return
             # catch all exceptions to prevent a crash of the node
             except Exception as e:
-                LOGGER.exception(e)
-                traceback.print_exc(file=sys.stdout)
+                exception(e)
+                print_exc(file=stdout)
                 self.result = Exception
                 self.status = 2
                 return
@@ -101,7 +101,7 @@ class ControlThread(InterruptableThread):
         self.control_channel = control_channel
         self.run_thread = True
         self.thread_name = thread_name
-        print(self.control_channel)
+        info(self.control_channel)
 
     def stop(self):
         self.run_thread = False
@@ -112,10 +112,10 @@ class ControlThread(InterruptableThread):
             while self.run_thread:
                 msg = self.redis_client.get_message()
                 if msg is not None:
-                    print(msg)
+                    info(msg)
                     if self._control_task_thread_handle_channel(msg):
                         break
-                time.sleep(0.001)
+                sleep(0.001)
             self.redis_client._pubsub_connection.unsubscribe(
                 self.control_channel)
         except ThreadAbortException:
@@ -129,8 +129,8 @@ class ControlThread(InterruptableThread):
             if self._control_task_thread_handle_data(msg):
                 return True
         except Exception as e:
-            LOGGER.exception(e)
-            traceback.print_exc(file=sys.stdout)
+            exception(e)
+            print_exc(file=stdout)
             return True
         return False
 
@@ -141,12 +141,12 @@ class ControlThread(InterruptableThread):
         data = msg['data']
         if type(data) == bytes:
             decoded_data = data.decode('utf-8')
-            parsed_data = TaskControlMessage.from_json(decoded_data)
-            print(parsed_data)
+            parsed_data = TaskControlMessage.parse_raw(decoded_data)
+            debug(parsed_data)
             if parsed_data.workflow_id == self.workflow_id:
                 for command in self.control_actions:
                     if parsed_data.command == command:
-                        print('executing command', command)
+                        debug('executing command', command)
                         self.control_actions[command]()
                         return True
         return False
@@ -163,30 +163,31 @@ class TaskControlThread(ControlThread):
         self.task_thread = task_thread
 
         def stop():
-            print('stopping task')
+            warning('stopping task')
             self.task_thread.stop()
 
         def abort():
-            print('aborting task')
+            warning('aborting task')
             self.task_thread.abort()
+        control_channel = (
+            ((namespace + '_') if namespace else '') +
+            task_control_channel_redis_key
+        )
         ControlThread.__init__(
             self,
-            workflow_id,
-            {
+            workflow_id=workflow_id,
+            control_actions={
                 'stop': stop,
                 'abort': self.task_thread.abort
             },
-            redis_client,
-            (
-                ((namespace + '_') if namespace else '') +
-                task_control_channel_redis_key
-            ),
-            'TaskControlThread'
+            redis_client=redis_client,
+            control_channel=control_channel,
+            thread_name='TaskControlThread'
         )
 
 
 class TaskRunner():
-    lock = threading.Lock()
+    lock = Lock()
 
     def __init__(
         self,
@@ -207,26 +208,25 @@ class TaskRunner():
     def running_workflows(self):
         return self.task_threads
 
-    def run(
+    async def run(
         self,
         arguments: Dict[str, str],
         workflow_id: str,
-        buffer: io.BytesIO
+        buffer: BytesIO
     ) -> TaskRunnerReturnType:
         try:
-            LOGGER.debug(
-                'running task function %s '
-                'with arguments %s' % (self.name, json.dumps(arguments), ))
-            print(workflow_id)
+            debug(
+                f"running task function {self.name} "
+                f"with arguments {dumps(arguments)}"
+            )
+            info(workflow_id)
             if arguments is None:
-                arguments = {}
+                arguments = dict()
             # self.convert_arguments could raise a TypeError
             arguments = self.convert_arguments(arguments)
             with TaskRunner.lock:
                 self.task_threads[workflow_id] = self._create_task_thread(
-                    arguments,
-                    buffer
-                )
+                    arguments, buffer)
             # start the task
             with TaskRunner.lock:
                 self.task_threads[workflow_id].start()
@@ -246,24 +246,24 @@ class TaskRunner():
             if self.task_threads[workflow_id].status == 2:
                 # wait for task thread to normally exit
                 self.task_threads[workflow_id].join()
-                print('task finished')
+                info('task finished')
             else:
-                print('task aborted or stopped')
+                warning('task aborted or stopped')
             with TaskRunner.lock:
                 task_result = self.task_threads[workflow_id].result
                 del self.task_threads[workflow_id]
             # parse the result to correctly return a result with arguments
             return TaskRunner._parse_task_output(task_result, arguments)
         except TypeError as e:
-            LOGGER.exception(e)
-            traceback.print_exc(file=sys.stdout)
+            exception(e)
+            print_exc(file=stdout)
             del self.task_threads[workflow_id]
             return None
 
     def _create_task_thread(
         self,
         arguments: Dict[str, str],
-        buffer: io.BytesIO
+        buffer: BytesIO
     ):
         return TaskThread(
             self.callback,
@@ -281,9 +281,9 @@ class TaskRunner():
             => but only, if the 'stop' message
             arrives during the thread's runtime
         """
-        start_time = time.time()
+        start_time = time()
         while True:
-            current_time = time.time()
+            current_time = time()
             elapsed_time = current_time - start_time
             if (
                 self.task_timeout is not None and
@@ -294,7 +294,7 @@ class TaskRunner():
             # check, if exited, stopped or aborted
             if self._task_finished(workflow_id):
                 break
-            time.sleep(0.001)
+            sleep(0.001)
 
     @staticmethod
     def _parse_task_output(
@@ -342,7 +342,7 @@ class TaskRunner():
                     try:
                         arguments[argument] = int(arguments[argument])
                     except Exception as e:
-                        print(e)
+                        error(e)
         return arguments
 
     def abort(self, workflow_id: str):

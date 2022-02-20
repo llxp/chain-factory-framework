@@ -1,13 +1,10 @@
-import inspect
-import json
+from inspect import signature
 from typing import Callable, Dict, List
-from .models.mongo.task import Task
-from .models.mongo.node_tasks import NodeTasks
-from .models.mongo.registered_task import RegisteredTask
-from .models.mongo.namespace import Namespace
+
+from odmantic import AIOEngine
+from .models.mongodb_models import Task, NodeTasks, RegisteredTask
 from .task_runner import TaskRunner
 from .task_handler import TaskHandler
-from .wrapper.mongodb_client import MongoDBClient
 from .common.settings import unique_hostnames, force_register
 
 
@@ -15,12 +12,12 @@ class NodeRegistration():
     def __init__(
         self,
         namespace: str,
-        mongodb_client: MongoDBClient,
+        database: AIOEngine,
         node_name: str,
         task_handler: TaskHandler
     ):
         self.namespace = namespace
-        self.mongodb_client = mongodb_client
+        self.database = database
         self.node_name = node_name
         self.task_handler = task_handler
 
@@ -41,19 +38,11 @@ class NodeRegistration():
 
     def _register_node(self):
         node_tasks = self._node_tasks()
-        self.mongodb_client.db().registered_tasks.insert_one(
-            dict(json.loads(node_tasks.to_json()))
-        )
+        self.database.save(node_tasks)
 
     def _remove_node_registration(self):
-        self.mongodb_client.db().registered_tasks.delete_many(
-            {
-                '$and': [
-                    {'node_name': self.node_name},
-                    {'namespace': self.namespace}
-                ]
-            }
-        )
+        node_registrations = self._node_already_registered()
+        self.database.delete(node_registrations)
 
     def _raise_node_already_registered(self):
         raise Exception(
@@ -62,16 +51,10 @@ class NodeRegistration():
         )
 
     def _node_already_registered(self):
-        return self.mongodb_client.db().registered_tasks.find_one(
-            {
-                '$and': [
-                    {'node_name': self.node_name},
-                    {'namespace': self.namespace}
-                ]
-            }, {
-                '_id': 0
-            }
-        )
+        return self.database.find(NodeRegistration, (
+            (NodeRegistration.node_name == self.node_name) &
+            (NodeRegistration.namespace == self.namespace)
+        ))
 
     def _task_arguments(self, function_signature):
         """
@@ -98,7 +81,7 @@ class NodeRegistration():
         Inspect given callback and return a RegisteredTask object
         needed for _node_tasks to assemble the full list of registered tasks
         """
-        function_signature = inspect.signature(callback)
+        function_signature = signature(callback)
         argument_names = self._task_arguments(function_signature)
         argument_types = self._task_argument_types(function_signature)
         return RegisteredTask(
@@ -123,16 +106,5 @@ class NodeRegistration():
             tasks=all_registered_tasks
         )
 
-    def _existing_namespaces(self):
-        namespaces = self.mongodb_client.db().namespaces
-        return namespaces.find_one({'namespace': self.namespace})
-
-    def register_namespace(self):
-        if not self._existing_namespaces():
-            self.mongodb_client.db().namespaces.insert_one(
-                dict(json.loads(Namespace(namespace=self.namespace).to_json()))
-            )
-
     def register(self):
-        self.register_namespace()
         self.register_tasks()

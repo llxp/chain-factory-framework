@@ -1,9 +1,7 @@
+from chain_factory.task_queue.decorators.repeat import repeat
 import unittest
-import logging
 import sys
 sys.path.append('C:\\Users\\F21987975ADM\\chain-factory\\framework\\src')
-
-from chain_factory.task_queue.decorators.repeat import repeat
 
 
 class RepeatDecoratorTest(unittest.TestCase):

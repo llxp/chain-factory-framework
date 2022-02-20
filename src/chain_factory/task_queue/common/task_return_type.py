@@ -1,5 +1,5 @@
 from typing import Union, Callable, Dict, Tuple
-from ..models.mongo.task import Task
+from ..models.mongodb_models import Task
 
 CallbackType = Callable[..., 'TaskReturnType']
 TaskReturnType = Union[

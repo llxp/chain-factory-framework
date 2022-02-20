@@ -18,11 +18,18 @@ class CredentialsPool:
         self.endpoint = endpoint
         self.username = username
         self.password = password
-        self._credentials: Dict[CredentialsRetriever] = {}
-        for namespace in namespaces:
+        self.namespaces = namespaces
+        self._credentials: Dict[str, CredentialsRetriever] = {}
+
+    async def init(self):
+        for namespace in self.namespaces:
             self.get_credentials(namespace)
 
-    def get_credentials(self, namespace: str) -> CredentialsRetriever:
+    async def get_credentials(
+        self,
+        namespace: str,
+        key: str
+    ) -> CredentialsRetriever:
         """
         Get the credentials for the namespace.
         """
@@ -30,5 +37,15 @@ class CredentialsPool:
             return self._credentials[namespace]
         except KeyError:
             self._credentials[namespace] = CredentialsRetriever(
-                self.endpoint, namespace, self.username, self.password)
+                self.endpoint, namespace, self.username, self.password, key)
+            await self._credentials[namespace].init()
             return self._credentials[namespace]
+
+    async def update_credentials(self):
+        """
+        Update the credentials for the namespace.
+        """
+        namespaces = self._credentials.keys()
+        self._credentials = {}
+        for namespace in namespaces:
+            await self.get_credentials(namespace)

@@ -4,14 +4,14 @@ https://stackoverflow.com/questions/14482230/why-does-the-python-threading
 -thread-object-has-start-but-not-stop?noredirect=1&lq=1
 """
 
-import _thread
-import ctypes as _ctypes
-import threading as _threading
+from _thread import interrupt_main, exit as thread_exit
+from ctypes import pythonapi, c_ulong, py_object, c_int
+from threading import Thread
 
-_PyThreadState_SetAsyncExc = _ctypes.pythonapi.PyThreadState_SetAsyncExc
+_PyThreadState_SetAsyncExc = pythonapi.PyThreadState_SetAsyncExc
 # noinspection SpellCheckingInspection
-_PyThreadState_SetAsyncExc.argtypes = _ctypes.c_ulong, _ctypes.py_object
-_PyThreadState_SetAsyncExc.restype = _ctypes.c_int
+_PyThreadState_SetAsyncExc.argtypes = c_ulong, py_object
+_PyThreadState_SetAsyncExc.restype = c_int
 
 # noinspection PyUnreachableCode
 if __debug__:
@@ -41,7 +41,7 @@ def set_async_exc(id, exc, *args):
 
 def interrupt(ident=None):
     if ident is None:
-        _thread.interrupt_main()
+        interrupt_main()
     else:
         set_async_exc(ident, KeyboardInterrupt)
 
@@ -49,7 +49,7 @@ def interrupt(ident=None):
 # noinspection PyShadowingBuiltins
 def exit(ident=None):
     if ident is None:
-        _thread.exit()
+        thread_exit()
     else:
         set_async_exc(ident, SystemExit)
 
@@ -58,9 +58,9 @@ class ThreadAbortException(SystemExit):
     pass
 
 
-class InterruptableThread(_threading.Thread):
+class InterruptableThread(Thread):
     def __init__(self):
-        _threading.Thread.__init__(self)
+        Thread.__init__(self)
 
     def set_async_exc(self, exc, *args):
         return set_async_exc(self.ident, exc, *args)

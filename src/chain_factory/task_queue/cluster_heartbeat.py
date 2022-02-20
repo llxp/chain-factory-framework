@@ -1,12 +1,11 @@
 from threading import Thread
 from _thread import interrupt_main
 from datetime import datetime
-import time
-import pytz
+from time import sleep
 
 from .wrapper.redis_client import RedisClient
 from .common.settings import heartbeat_redis_key, heartbeat_sleep_time
-from .models.redis.heartbeat import Heartbeat
+from .models.redis_models import Heartbeat
 
 
 class ClusterHeartbeat():
@@ -26,7 +25,6 @@ class ClusterHeartbeat():
         starts the heartbeat thread
         """
         self.heartbeat_running = True
-        # start_new_thread(self.heartbeat_thread, ())
         self.thread = Thread(target=self._heartbeat_thread)
         self.thread.start()
 
@@ -38,20 +36,18 @@ class ClusterHeartbeat():
         self.thread.join()
 
     def _current_timestamp(self):
-        return datetime.now(pytz.UTC)
+        return datetime.utcnow()
 
     def _redis_key(self):
-        return \
-            heartbeat_redis_key + '_' + \
-            (self.namespace if self.namespace else '') + '_' + \
-            self.node_name
+        ns = self.namespace + '_' if self.namespace else ''
+        return heartbeat_redis_key + '_' + ns + self.node_name
 
     def _json_heartbeat(self):
         return Heartbeat(
             node_name=self.node_name,
             namespace=self.namespace,
             last_time_seen=self._current_timestamp()
-        ).to_json()
+        ).json()
 
     def _set_heartbeat(self):
         result = self._redis_client.set(
@@ -71,4 +67,4 @@ class ClusterHeartbeat():
         """
         while self.heartbeat_running:
             self._set_heartbeat()
-            time.sleep(heartbeat_sleep_time)
+            sleep(heartbeat_sleep_time)

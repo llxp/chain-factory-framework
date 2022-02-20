@@ -1,26 +1,26 @@
-from .models.mongo.task import Task
-from .wrapper.amqp import AMQP
+from .models.mongodb_models import Task
+from .wrapper.rabbitmq import RabbitMQ
 
 
 class TaskStarter:
     def __init__(
         self,
         namespace: str,
-        rabbitmq_host: str,
-        username: str,
-        password: str
+        rabbitmq_url: str,
     ):
         self.namespace = namespace
-        self.amqp_client = AMQP(
-            host=rabbitmq_host,
-            queue_name=namespace + "_" + "task_queue",
-            username=username,
-            password=password,
-            amqp_type="publisher",
-            virtual_host=namespace,
+        queue_name = namespace + "_task_queue"
+        self.amqp_client = RabbitMQ(
+            url=rabbitmq_url,
+            queue_name=queue_name,
+            rmq_type="publisher"
         )
 
-    def start_task(self, task_name, arguments, node_names=[], tags=[]):
-        task = Task(name=task_name, arguments=arguments,
-                    node_names=node_names, tags=tags)
-        self.amqp_client.send(task.to_json())
+    async def start_task(self, task_name, arguments, node_names=[], tags=[]):
+        task = Task(
+            name=task_name,
+            arguments=arguments,
+            node_names=node_names,
+            tags=tags
+        )
+        await self.amqp_client.send(task.json())
