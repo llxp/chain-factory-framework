@@ -1,11 +1,12 @@
 from threading import Thread
 from _thread import interrupt_main
 from datetime import datetime
-from time import sleep
+from asyncio import sleep, AbstractEventLoop, ensure_future
 
-from .wrapper.redis_client import RedisClient
+from .client_pool import ClientPool
 from .common.settings import heartbeat_redis_key, heartbeat_sleep_time
 from .models.redis_models import Heartbeat
+from .wrapper.redis_client import RedisClient
 
 
 class ClusterHeartbeat():
@@ -13,34 +14,36 @@ class ClusterHeartbeat():
         self,
         namespace: str,
         node_name: str,
-        redis_client: RedisClient
+        client_pool: ClientPool,
+        loop: AbstractEventLoop
     ):
-        self._redis_client = redis_client
+        self._client_pool = client_pool
         self.node_name = node_name
         self.namespace = namespace
         self.heartbeat_running = False
+        self.loop = loop
+        self.thread = Thread(target=self._heartbeat_thread)
 
     def start_heartbeat(self):
         """
         starts the heartbeat thread
         """
         self.heartbeat_running = True
-        self.thread = Thread(target=self._heartbeat_thread)
         self.thread.start()
 
     def stop_heartbeat(self):
         """
         stops the heartbeat thread
         """
-        self.heartbeat_running = False
-        self.thread.join()
+        if self.heartbeat_running:
+            self.heartbeat_running = False
+            self.thread.join()
 
     def _current_timestamp(self):
         return datetime.utcnow()
 
     def _redis_key(self):
-        ns = self.namespace + '_' if self.namespace else ''
-        return heartbeat_redis_key + '_' + ns + self.node_name
+        return heartbeat_redis_key + '_' + self.node_name
 
     def _json_heartbeat(self):
         return Heartbeat(
@@ -49,8 +52,8 @@ class ClusterHeartbeat():
             last_time_seen=self._current_timestamp()
         ).json()
 
-    def _set_heartbeat(self):
-        result = self._redis_client.set(
+    async def _set_heartbeat(self, redis_client: RedisClient):
+        result = await redis_client.set(
             self._redis_key(),
             self._json_heartbeat()
         )
@@ -65,6 +68,11 @@ class ClusterHeartbeat():
         and waits a specified amount of time
         repeats as long as the node is running
         """
+        coroutine = self._run_loop()
+        ensure_future(coroutine, loop=self.loop)
+
+    async def _run_loop(self):
+        redis_client = await self._client_pool.redis_client()
         while self.heartbeat_running:
-            self._set_heartbeat()
-            sleep(heartbeat_sleep_time)
+            await self._set_heartbeat(redis_client)
+            await sleep(heartbeat_sleep_time)

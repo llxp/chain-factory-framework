@@ -10,7 +10,8 @@ class MongoDBClient():
         uri: str
     ):
         client = AsyncIOMotorClient(uri, serverSelectionTimeoutMS=5000)
-        self.client = AIOEngine(client)
+        self.client = AIOEngine(
+            client, database=client.get_default_database().name)
 
     async def check_connection(self):
         try:
@@ -21,4 +22,4 @@ class MongoDBClient():
             raise
 
     async def close(self):
-        await self.client.close()
+        pass

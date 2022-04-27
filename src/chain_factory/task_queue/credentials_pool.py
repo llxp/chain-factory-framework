@@ -1,4 +1,4 @@
-from typing import Dict, List
+from typing import Dict
 from .credentials_retriever import CredentialsRetriever
 
 
@@ -13,7 +13,7 @@ class CredentialsPool:
         endpoint: str,
         username: str,
         password: str,
-        namespaces: List[str] = []
+        namespaces: Dict[str, str] = {}
     ):
         self.endpoint = endpoint
         self.username = username
@@ -23,7 +23,7 @@ class CredentialsPool:
 
     async def init(self):
         for namespace in self.namespaces:
-            self.get_credentials(namespace)
+            await self.get_credentials(namespace, self.namespaces[namespace])
 
     async def get_credentials(
         self,

@@ -1,4 +1,5 @@
-from logging import info, warning, shutdown as shutdown_log
+from asyncio import AbstractEventLoop
+from logging import info, warning, debug, shutdown as shutdown_log
 from _thread import interrupt_main
 from time import sleep
 from typing import Dict
@@ -13,6 +14,12 @@ from .wait_handler import WaitHandler
 from .node_registration import NodeRegistration
 from .task_waiter import TaskWaiter
 from .credentials_pool import CredentialsPool
+from .common.settings import (
+    incoming_block_list_redis_key, wait_block_list_redis_key,
+    wait_queue as wait_queue_default, task_queue as task_queue_default,
+    incoming_blocked_queue as incoming_blocked_queue_default,
+    wait_blocked_queue as wait_blocked_queue_default,
+)
 
 
 class TaskQueueHandlers():
@@ -26,6 +33,7 @@ class TaskQueueHandlers():
         password: str,
         worker_count: int,
         task_timeout: int,
+        loop: AbstractEventLoop = None,
     ):
         self.node_name = node_name
         self.namespace = namespace
@@ -42,8 +50,10 @@ class TaskQueueHandlers():
         self.task_queue_clients = ClientPool()
         self._task_waiter: Dict[str, TaskWaiter] = {}
         self._credentials_pool = CredentialsPool(
-            endpoint, username, password, [namespace]
+            endpoint, username, password, {namespace: namespace_key}
         )
+        self.loop: AbstractEventLoop = loop
+        self.cluster_heartbeat: ClusterHeartbeat = None
 
     def add_task(
         self,
@@ -60,31 +70,32 @@ class TaskQueueHandlers():
 
     @property
     def task_queue(self):
-        return self.namespaced('task_queue')
+        return self.namespaced(task_queue_default)
 
     @property
     def incoming_blocked_queue(self):
-        return self.namespaced('incoming_blocked_queue')
+        return self.namespaced(incoming_blocked_queue_default)
 
     @property
     def wait_blocked_queue(self):
-        return self.namespaced('wait_blocked_queue')
+        return self.namespaced(wait_blocked_queue_default)
 
     @property
     def wait_queue(self):
-        return self.namespaced('wait_queue')
+        return self.namespaced(wait_queue_default)
 
     @property
     def incoming_block_list(self):
-        return self.namespaced('incoming_block_list')
+        return incoming_block_list_redis_key
+        # return self.namespaced('incoming_block_list')
 
     @property
     def wait_block_list(self):
-        return self.namespaced('wait_block_list')
+        return wait_block_list_redis_key
+        # return self.namespaced('wait_block_list')
 
-    @property
-    def redis_client(self):
-        return self.task_queue_clients.redis_client()
+    async def redis_client(self):
+        return await self.task_queue_clients.redis_client()
 
     @property
     def mongodb_client(self):
@@ -104,7 +115,9 @@ class TaskQueueHandlers():
         # init redis and mongodb connections
         await self.task_queue_clients.init(
             redis_url=self.credentials.redis,
-            mongodb_url=self.credentials.mongodb
+            key_prefix=self.credentials.redis_prefix,
+            mongodb_url=self.credentials.mongodb,
+            loop=self.loop,
         )
         rabbitmq_url = self.credentials.rabbitmq
         await self._init_wait_handler(rabbitmq_url)
@@ -128,10 +141,11 @@ class TaskQueueHandlers():
         await self._wait_handler.init(
             rabbitmq_url=rabbitmq_url,
             node_name=self.node_name,
-            redis_client=self.redis_client,
+            redis_client=await self.redis_client(),
             queue_name=self.task_queue,
             wait_queue_name=self.wait_queue,
-            blocked_queue_name=self.wait_blocked_queue
+            blocked_queue_name=self.wait_blocked_queue,
+            client_pool=self.task_queue_clients,
         )
 
     async def _init_incoming_blocked_handler(self, rabbitmq_url: str):
@@ -145,23 +159,25 @@ class TaskQueueHandlers():
         await self._incoming_blocked_handler.init(
             rabbitmq_url=rabbitmq_url,
             node_name=self.node_name,
-            redis_client=self.redis_client,
+            redis_client=await self.redis_client(),
             task_queue_name=self.task_queue,
             blocked_queue_name=self.incoming_blocked_queue,
-            block_list_name=self.incoming_block_list
+            block_list_name=self.incoming_block_list,
+            client_pool=self.task_queue_clients,
         )
 
     async def _init_wait_blocked_handler(self, rabbitmq_url: str):
         """
         Init the blocked queue listener for all waiting tasks (failed, etc.)
         """
-        self._wait_blocked_handler.init(
+        await self._wait_blocked_handler.init(
             rabbitmq_url=rabbitmq_url,
             node_name=self.node_name,
-            redis_client=self.redis_client,
+            redis_client=await self.redis_client(),
             task_queue_name=self.wait_queue,
             blocked_queue_name=self.wait_blocked_queue,
             block_list_name=self.wait_block_list,
+            client_pool=self.task_queue_clients,
         )
 
     async def _init_task_handler(self, rabbitmq_url: str):
@@ -171,10 +187,11 @@ class TaskQueueHandlers():
         await self._task_handler.init(
             mongodb_client=self.mongodb_client.client,
             rabbitmq_url=rabbitmq_url,
-            redis_client=self.redis_client,
+            redis_client=await self.redis_client(),
             queue_name=self.task_queue,
             wait_queue_name=self.wait_queue,
             blocked_queue_name=self.incoming_blocked_queue,
+            client_pool=self.task_queue_clients,
         )
         self._task_handler.task_timeout = self.task_timeout
         self._task_handler.update_task_timeout()
@@ -184,35 +201,39 @@ class TaskQueueHandlers():
         Init the ClusterHeartbeat
         """
         self.cluster_heartbeat: ClusterHeartbeat = ClusterHeartbeat(
-            self.namespace,
-            self.node_name,
-            self.task_queue_clients.redis_client(),
-        )
+            self.namespace, self.node_name, self.task_queue_clients, self.loop)
 
     async def listen(self):
         """
         Initialises the queue and starts listening
         """
         await self.init()
-        self._task_handler.task_set_redis_client(self.redis_client)
+        redis_client = await self.redis_client()
+        self._task_handler.task_set_redis_client(redis_client)
         await self._listen_control_messages()
         await self._node_registration.register()
+        debug(f"Scaling {self.worker_count} threads")
         await self._task_handler.scale(self.worker_count)
-        await self.cluster_heartbeat.start_heartbeat()
+        self.cluster_heartbeat.start_heartbeat()
         info('listening')
         await self._listen_handlers()
 
     async def _listen_control_messages(self):
         try:
+            def stop_node_callback():
+                interrupt_main()
+                exit(0)
             credentials = await self._credentials_pool.get_credentials(
-                self.namespace)
+                self.namespace, self.namespace_key)
             redis_client = await self.task_queue_clients.redis_client(
                 credentials.redis)
+            redis_key = self.namespaced('node_control_channel')
             self.node_control_thread = ControlThread(
                 self.node_name,
-                {'stop': interrupt_main},  # used to stop the node from remote
+                # used to stop the node from remote
+                {'stop': stop_node_callback},
                 redis_client,
-                self.namespaced('node_control_channel')
+                redis_key
             )
             self.node_control_thread.start()
         except ThreadAbortException:
@@ -220,7 +241,8 @@ class TaskQueueHandlers():
             self.node_control_thread.abort()
 
     async def stop_heartbeat(self):
-        self.cluster_heartbeat.stop_heartbeat()
+        if self.cluster_heartbeat:
+            self.cluster_heartbeat.stop_heartbeat()
 
     async def stop_node(self):
         await self.stop_listening()
@@ -228,17 +250,18 @@ class TaskQueueHandlers():
         task_runner_count = len(self._task_handler.registered_tasks)
 
         while running_workflows_counter < task_runner_count:
-            running_workflows_counter = await self.count_running_tasks()
+            running_workflows_counter = self.count_running_tasks()
             sleep(0.1)
         if running_workflows_counter >= task_runner_count:
             info('node is dry')
             await self.stop_heartbeat()
             await self.task_queue_clients.close()
-            await self.redis_client.close()
+            redis_client = await self.redis_client()
+            await redis_client.close()
             await self._task_handler.rabbitmq.close()
             await self._wait_handler.rabbitmq.close()
             shutdown_log()
-            await self.node_control_thread.stop()
+            self.node_control_thread.stop()
 
     def count_running_tasks(self):
         running_workflows_counter = 0
@@ -252,17 +275,17 @@ class TaskQueueHandlers():
     async def _init_registration(self):
         self._node_registration = NodeRegistration(
             self.namespace,
-            self.task_queue_clients.mongodb_client,
+            self.task_queue_clients.mongodb_client.client,
             self.node_name,
             self._task_handler
         )
 
     async def stop_listening(self):
         info('shutting down node')
-        await self._task_handler.stop_listening()
-        await self._wait_handler.stop_listening()
-        await self._wait_blocked_handler.stop_listening()
-        await self._incoming_blocked_handler.stop_listening()
+        self._task_handler.stop_listening()
+        self._wait_handler.stop_listening()
+        self._wait_blocked_handler.stop_listening()
+        self._incoming_blocked_handler.stop_listening()
 
     async def _listen_handlers(self):
         """

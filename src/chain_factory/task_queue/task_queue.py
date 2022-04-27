@@ -1,5 +1,8 @@
+from functools import wraps
 from typing import Dict
-from asyncio import new_event_loop
+from asyncio import AbstractEventLoop, new_event_loop
+from inspect import signature
+from logging import debug
 
 from .credentials_pool import CredentialsPool
 from .task_starter import TaskStarter
@@ -13,6 +16,7 @@ from .common.settings import \
     namespace_key as default_namespace_key
 from .common.generate_random_id import generate_random_id
 from .credentials_retriever import CredentialsRetriever
+from .models.mongodb_models import Task
 
 
 class TaskQueue():
@@ -47,8 +51,7 @@ class TaskQueue():
         self._task_starter: Dict[str, TaskStarter] = {}
         # credentials pool
         self._credentials_pool = CredentialsPool(
-            endpoint, username, password, [self.namespace]
-        )
+            endpoint, username, password, {self.namespace: self.namespace_key})
         self.task_queue_handlers: TaskQueueHandlers = TaskQueueHandlers(
             namespace=self.namespace,
             namespace_key=self.namespace_key,
@@ -62,12 +65,18 @@ class TaskQueue():
 
     async def start_new_task(
         self,
-        namespace: str,
         task_name: str,
-        arguments: dict
+        arguments: dict,
+        namespace: str = None,
+        namespace_key: str = None
     ):
+        if namespace is None:
+            namespace = self.namespace
+        if namespace_key is None:
+            namespace_key = self.namespace_key
         credentials: CredentialsRetriever = \
-            await self._credentials_pool.get_credentials(namespace)
+            await self._credentials_pool.get_credentials(
+                namespace, namespace_key)
         rabbitmq_url = credentials.rabbitmq()
         try:
             await self._task_starter[namespace].start_task(
@@ -108,24 +117,31 @@ class TaskQueue():
             # using the function name
             self.task_queue_handlers.add_task(
                 temp_name, func, repeat_on_timeout)
+            return func
         return wrapper
 
-    def add_task(self, func, name: str = ''):
+    def add_task(
+        self,
+        func,
+        name: str = '',
+        repeat_on_timeout: bool = default_task_repeat_on_timeout
+    ):
         """
         Method to add tasks, which cannot be added using the decorator
         """
-        outer_wrapper = self.task(name)
+        outer_wrapper = self.task(name, repeat_on_timeout)
         outer_wrapper(func)
 
-    async def listen(self):
+    async def listen(self, loop: AbstractEventLoop = None):
         """
         Initialises the queue and starts listening
         """
-        self._update_task_queue_handlers()
+        self._update_task_queue_handlers(loop)
         await self._credentials_pool.init()
         await self.task_queue_handlers.listen()
 
-    def _update_task_queue_handlers(self):
+    def _update_task_queue_handlers(self, loop: AbstractEventLoop = None):
+        self.task_queue_handlers.loop = loop
         self.task_queue_handlers.worker_count = self.worker_count
         self.task_queue_handlers.namespace = self.namespace
         self.task_queue_handlers.node_name = self.node_name
@@ -135,7 +151,7 @@ class TaskQueue():
     def run(self):
         try:
             loop = new_event_loop()
-            loop.create_task(self.listen())
+            loop.create_task(self.listen(loop))
             loop.run_forever()
         except KeyboardInterrupt:
             loop.run_until_complete(self.task_queue_handlers.stop_node())

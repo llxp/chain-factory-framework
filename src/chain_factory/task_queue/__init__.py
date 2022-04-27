@@ -1,1 +1,5 @@
-from .task_queue import *
+from .task_queue import TaskQueue
+
+__all__ = [
+    'TaskQueue',
+]

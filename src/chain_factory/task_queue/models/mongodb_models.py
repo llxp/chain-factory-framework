@@ -1,41 +1,37 @@
 from datetime import datetime
 from typing import Dict, List, Optional
-from pydantic import BaseModel, Field
-from odmantic import AIOEngine
+from odmantic import AIOEngine, EmbeddedModel, Model, Field
 
 from ..common.generate_random_id import generate_random_id
 from ..common.settings import reject_limit
 
 
-class RegisteredTask(BaseModel):
+class RegisteredTask(EmbeddedModel):
     name: str
     arguments: Dict[str, str] = {}
 
 
-class NodeTasks(BaseModel):
+class NodeTasks(Model):
     node_name: str
     namespace: str
     tasks: List[RegisteredTask] = []
 
 
-class Node(BaseModel):
-    name: str
-
-
-class TaskLog(BaseModel):
+class Log(Model):
+    __collection__ = "logs"
     log_line: str
     task_id: str
     workflow_id: str
 
 
-class TaskStatus(BaseModel):
+class TaskStatus(Model):
     task_id: str
     namespace: str
     status: str
     created_date: str
 
 
-class Task(BaseModel):
+class Task(EmbeddedModel):
     # required, name of task to start
     name: str
     # required, arguments of task to start
@@ -80,7 +76,10 @@ class Task(BaseModel):
         self.workflow_id = generate_random_id()
 
     def is_planned_task(self):
-        return self.planned_date
+        return (
+            self.planned_date is not None and
+            self.planned_date > datetime.utcnow()
+        )
 
     def increase_rejected(self):
         self.reject_counter = self.reject_counter + 1
@@ -118,19 +117,19 @@ class Task(BaseModel):
         self.task_id = None
 
 
-class TaskWorkflowAssociation(BaseModel):
-    task: Task = None
+class TaskWorkflowAssociation(Model):
+    task: Optional[Task] = None
     workflow_id: str
     node_name: str
 
 
-class WorkflowLog(BaseModel):
+class WorkflowLog(Model):
     log_lines: List[str] = []
     workflow_id: str
     task_id: str
 
 
-class Workflow(BaseModel):
+class Workflow(Model):
     created_date: datetime = Field(default_factory=datetime.utcnow)
     workflow_id: str
     node_name: str
@@ -138,7 +137,7 @@ class Workflow(BaseModel):
     tags: List[str] = []
 
 
-class WorkflowStatus(BaseModel):
+class WorkflowStatus(Model):
     workflow_id: str
     namespace: str
     status: str

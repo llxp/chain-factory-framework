@@ -7,6 +7,7 @@ from .models.mongodb_models import Task
 from .list_handler import ListHandler
 from .queue_handler import QueueHandler
 from .common.settings import wait_time
+from .client_pool import ClientPool
 
 
 class BlockedHandler(QueueHandler):
@@ -26,12 +27,14 @@ class BlockedHandler(QueueHandler):
         task_queue_name: str,
         blocked_queue_name: str,
         block_list_name: str,
-        redis_client: RedisClient
+        redis_client: RedisClient,
+        client_pool: ClientPool,
     ):
         await QueueHandler.init(
             self,
             url=rabbitmq_url,
-            queue_name=blocked_queue_name
+            queue_name=blocked_queue_name,
+            client_pool=client_pool,
         )
         self.node_name = node_name
         self.rabbitmq_sender_task_queue: RabbitMQ = RabbitMQ(

@@ -21,42 +21,42 @@ class NodeRegistration():
         self.node_name = node_name
         self.task_handler = task_handler
 
-    def register_tasks(self):
+    async def register_tasks(self):
         """
         Registers all internally registered tasks in the database
         in the form:
             node_name/task_name
         """
-        already_registered_node = self._node_already_registered()
-        # print(already_registered_node)
+        already_registered_node = await self._node_already_registered()
         if already_registered_node is not None:
             if unique_hostnames:  # setting
-                self._raise_node_already_registered()
+                await self._raise_node_already_registered()
             if force_register:  # setting
-                self._remove_node_registration()
-        self._register_node()
+                await self._remove_node_registration()
+        await self._register_node()
 
-    def _register_node(self):
-        node_tasks = self._node_tasks()
-        self.database.save(node_tasks)
+    async def _register_node(self):
+        node_tasks = await self._node_tasks()
+        await self.database.save(node_tasks)
 
-    def _remove_node_registration(self):
-        node_registrations = self._node_already_registered()
-        self.database.delete(node_registrations)
+    async def _remove_node_registration(self):
+        node_registrations = await self._node_already_registered()
+        for node_registration in node_registrations:
+            await self.database.delete(node_registration)
 
-    def _raise_node_already_registered(self):
+    async def _raise_node_already_registered(self):
         raise Exception(
             'Existing node name found in redis list, exiting.\n'
             'If this is intentional, set unique_hostnames to False'
         )
 
-    def _node_already_registered(self):
-        return self.database.find(NodeRegistration, (
-            (NodeRegistration.node_name == self.node_name) &
-            (NodeRegistration.namespace == self.namespace)
+    async def _node_already_registered(self):
+        return await self.database.find(NodeTasks, (
+            (NodeTasks.node_name == self.node_name) &
+            (NodeTasks.namespace == self.namespace)
         ))
 
-    def _task_arguments(self, function_signature):
+    async def _task_arguments(self, function_signature):
         """
         Get arguments from task function signature
         """
@@ -65,7 +65,7 @@ class NodeRegistration():
             if obj != 'self'
         ]
 
-    def _task_argument_types(self, function_signature):
+    async def _task_argument_types(self, function_signature):
         """
         Get argument types from task function signature
         """
@@ -76,20 +76,24 @@ class NodeRegistration():
             for d in function_signature.parameters
         ]
 
-    def _registered_task(self, task_name: str, callback: Callable[..., Task]):
+    async def _registered_task(
+        self,
+        task_name: str,
+        callback: Callable[..., Task]
+    ):
         """
         Inspect given callback and return a RegisteredTask object
         needed for _node_tasks to assemble the full list of registered tasks
         """
         function_signature = signature(callback)
-        argument_names = self._task_arguments(function_signature)
-        argument_types = self._task_argument_types(function_signature)
+        argument_names = await self._task_arguments(function_signature)
+        argument_types = await self._task_argument_types(function_signature)
         return RegisteredTask(
             name=task_name,
             arguments=dict(zip(argument_names, argument_types))
         )
 
-    def _node_tasks(self):
+    async def _node_tasks(self):
         """
         Get all registered tasks on this node
         """
@@ -97,7 +101,7 @@ class NodeRegistration():
             self.task_handler.registered_tasks
         all_registered_tasks: List[RegisteredTask] = []
         for task_name in task_runners:
-            registered_task = self._registered_task(
+            registered_task = await self._registered_task(
                 task_name, task_runners[task_name].callback)
             all_registered_tasks.append(registered_task)
         return NodeTasks(
@@ -106,5 +110,5 @@ class NodeRegistration():
             tasks=all_registered_tasks
         )
 
-    def register(self):
-        self.register_tasks()
+    async def register(self):
+        await self.register_tasks()

@@ -1,13 +1,17 @@
-from typing import Dict, Union, Callable, List
+from typing import Dict, Union, Callable, List, Tuple
 from datetime import datetime
 from time import sleep
 from logging import info, debug, warning, error
 from threading import Lock
 from odmantic import AIOEngine
+from inspect import signature
+from asyncio import ensure_future
 
 from .task_runner import TaskRunner
 from .list_handler import ListHandler
 from .queue_handler import QueueHandler
+from .client_pool import ClientPool
+from .argument_excluder import ArgumentExcluder
 
 # wrapper
 from .wrapper.rabbitmq import RabbitMQ, Message
@@ -43,6 +47,8 @@ class TaskHandler(QueueHandler):
         self.task_timeout = None
         self.namespace = namespace
         self.node_name = node_name
+        self.client_pool: ClientPool = None
+        self._current_task = None
 
     async def init(
         self,
@@ -51,10 +57,17 @@ class TaskHandler(QueueHandler):
         queue_name: str,
         wait_queue_name: str,
         blocked_queue_name: str,
+        client_pool: ClientPool,
         rabbitmq_url: str,
     ):
+        self.client_pool = client_pool
         self.mongodb_client = mongodb_client
-        await QueueHandler.init(self, url=rabbitmq_url, queue_name=queue_name)
+        await QueueHandler.init(
+            self,
+            url=rabbitmq_url,
+            queue_name=queue_name,
+            client_pool=client_pool,
+        )
         self.wait_queue_name: str = wait_queue_name
         self.blocked_queue_name: str = blocked_queue_name
 
@@ -140,41 +153,11 @@ class TaskHandler(QueueHandler):
             tags=tags,
         ))
 
-    class _ArgumentExcluder:
-        def __init__(self, arguments):
-            self.arguments = arguments
-            self.arguments_copy = dict(arguments)
-
-        def argument_excluded(self, argument, excluded_argument):
-            return argument != "exclude" and argument == excluded_argument
-
-        def should_exclude_any_arguments(self):
-            return self.arguments and "exclude" in self.arguments
-
-        def excluded_arguments(self):
-            return self.arguments["exclude"]
-
-        def del_argument(self, argument):
-            del self.arguments[argument]
-
-        def check_exclude_argument(self, argument, excluded_argument):
-            if self.argument_excluded(argument, excluded_argument):
-                self.del_argument(argument)
-
-        def exclude(self):
-            if self.should_exclude_any_arguments():
-                self._exclude_arguments()
-
-        def _exclude_arguments(self):
-            for argument in self.arguments_copy:
-                for excluded_argument in self.excluded_arguments():
-                    self.check_exclude_argument(argument, excluded_argument)
-
     async def _save_task_workflow_association(self, task: Task):
         """
         Report the assignment from workflow_id to task_id to the database
         """
-        arguments_excluder = self._ArgumentExcluder(task.arguments)
+        arguments_excluder = ArgumentExcluder(task.arguments)
         arguments_excluder.exclude()
         task.arguments = arguments_excluder.arguments
         await self.mongodb_client.save(TaskWorkflowAssociation(
@@ -193,24 +176,39 @@ class TaskHandler(QueueHandler):
         log_buffer = BytesIOWrapper(
             task.task_id,
             task.workflow_id,
-            self.mongodb_client
+            self.mongodb_client,
+            loop=self.client_pool.loop,
         )
         # run the task
-        return await self.registered_tasks[task.name].run(
+        self._current_task = task
+        self._can_be_marked_as_stopped = True
+        result = await self.registered_tasks[task.name].run(
             task.arguments, task.workflow_id, log_buffer
         )
+        return result
 
     def _new_task_from_result(
         self, task_result: TaskReturnType, new_arguments: Dict[str, str]
     ) -> Task:
         # check, if result is a string ==> task name
         if isinstance(task_result, str):
-            return Task(task_result, new_arguments)
+            # create a new task object from task name and arguments 
+            # and return it
+            return Task(
+                name=task_result,
+                arguments=new_arguments
+            )
+        # check, if result is of type Task ==> task object
         if isinstance(task_result, Task):
+            # return the task object
             return task_result
         # check, if result is a registered callable
         if callable(task_result):
-            return Task(task_result.__name__, new_arguments)
+            # create a new task object and return it
+            return Task(
+                name=task_result.__name__,
+                arguments=new_arguments
+            )
         return None
 
     def _return_new_task(
@@ -223,7 +221,6 @@ class TaskHandler(QueueHandler):
         add the old task to the current task as the parent and schedule
         the to be scheduled task to the message queue
         """
-        # rename task_result to new_task for better readability
         new_task = self._new_task_from_result(task_result, new_arguments)
         new_task.set_parent_task(old_task)
         if sticky_tasks:  # settings.sticky_tasks
@@ -263,12 +260,12 @@ class TaskHandler(QueueHandler):
             task_id=task_id,
             namespace=self.namespace,
             status=result,
-            created_date=datetime.utcnow()
+            created_date=(datetime.utcnow()).isoformat()
         ))
 
     async def _mark_workflow_as_stopped(self, workflow_id: str, status: str):
         if not (
-            self.mongodb_client.find_one(WorkflowStatus, (
+            await self.mongodb_client.find_one(WorkflowStatus, (
                 (WorkflowStatus.workflow_id == workflow_id) &
                 (WorkflowStatus.namespace == self.namespace)
             ))
@@ -280,10 +277,16 @@ class TaskHandler(QueueHandler):
                 created_date=datetime.utcnow(),
             ))
 
-    async def _handle_workflow_stopped(self, result: str, task: Task):
+    async def _handle_workflow_stopped(
+        self,
+        result: str,
+        task: Task,
+        can_be_marked_as_stopped: bool
+    ):
         await self._save_task_result(task.task_id, result)
-        # None means, the workflow chain stops
-        await self._mark_workflow_as_stopped(task.workflow_id, result)
+        if can_be_marked_as_stopped:
+            # None means, the workflow chain stops
+            await self._mark_workflow_as_stopped(task.workflow_id, result)
         return None  # do nothing
 
     async def _handle_repeat_task(
@@ -295,7 +298,7 @@ class TaskHandler(QueueHandler):
         await self._save_task_result(task.task_id, result)
         # the result is False, indicating an error
         # => schedule the task to the waiting queue
-        return self._return_error_task(task, arguments)
+        return await self._return_error_task(task, arguments)
 
     async def _handle_task_result(
         self,
@@ -304,28 +307,33 @@ class TaskHandler(QueueHandler):
         message: Message,
         task: Task,
     ) -> Union[Task, None]:
-        self.ack(message)
+        await self.ack(message)
         if task_result is False:
             return await self._handle_repeat_task(task, arguments, "False")
         elif task_result is TimeoutError:
             if self.registered_tasks[task.name].task_repeat_on_timeout:
                 return self._handle_repeat_task(task, arguments, "Timeout")
-            return await self._handle_workflow_stopped("Timeout", task)
+            return await self._handle_workflow_stopped(
+                "Timeout", task, self._can_be_marked_as_stopped)
         elif task_result is ThreadAbortException:
             return await self._save_task_result(task.task_id, "Aborted")
         elif task_result is KeyboardInterrupt:
             return await self._save_task_result(task.task_id, "Stopped")
         else:  # task_result now can only be Task/None/Exception
             if task_result is None:
-                return await self._handle_workflow_stopped("None", task)
+                return await self._handle_workflow_stopped(
+                    "None", task, self._can_be_marked_as_stopped)
             # Exception means an exception occured during the task run
             elif task_result is Exception:
-                return await self._handle_workflow_stopped("Exception", task)
+                return await self._handle_workflow_stopped(
+                    "Exception", task, self._can_be_marked_as_stopped)
             # Task means, a new/next task has been returned,
             # to be scheduled to the queue
-            else:
+            elif task_result is Task:
                 await self._save_task_result(task.task_id, "Task")
                 return self._return_new_task(task, arguments, task_result)
+            else:
+                raise Exception(f"Unknown task result, {task_result}")
 
     async def _prepare_task_in_database(self, task: Task):
         await self._save_first_task_as_workflow(task)
@@ -386,7 +394,7 @@ class TaskHandler(QueueHandler):
         if task.workflow_precheck():
             return await self._prepare_workflow(task, message)
         task = await self._prepare_task(task)
-        if task.is_stopped(self.namespace, self.mongodb_client):
+        if await task.is_stopped(self.namespace, self.mongodb_client):
             return await self._handle_stopped(task, message)
         if task.is_planned_task():
             return await self._handle_planned_task(task, message)
@@ -410,8 +418,8 @@ class TaskHandler(QueueHandler):
         message: Message,
         task: Task
     ):
-        await queue.send(task.json())
         await self.ack(message)
+        await queue.send(task.json())
 
     async def _handle_rejected(self, requested_task: Task, message: Message):
         """
@@ -427,6 +435,18 @@ class TaskHandler(QueueHandler):
             await self._send_to_queue(self.rabbitmq, message, requested_task)
         return None
 
+    async def check_rejected_task(self, task: Task, message: Message):
+        """
+        Checks if the task has been rejected too often
+        """
+        task_rejected = task.check_node_filter(self.node_name)
+        if task_rejected:
+            debug(
+                "task_rejected, because current node "
+                "is not in the node_names list: " + task.json()
+            )
+            return await self._handle_rejected(task, message)
+
     async def on_task(self, task: Task, message: Message) -> Union[None, Task]:
         """
         The callback function, which will be called from the rabbitmq library
@@ -437,16 +457,10 @@ class TaskHandler(QueueHandler):
 
         Returns either None or a new task
         """
-        task_rejected = await task.check_node_filter(self.node_name)
-        if task_rejected:
-            debug(
-                "task_rejected, because current node "
-                "is not in the node_names list: " + task.json()
-            )
-            return await self._handle_rejected(task, message)
+        if task_rejected := await self.check_rejected_task(task, message):
+            return task_rejected
 
-        task_blocked = await self._check_blocklist(task, message)
-        if not task_blocked:
+        if not await self._check_blocklist(task, message):
             # task is not on the block list
             # reset reject_counter when task has been accepted
             task.reject_counter = 0
@@ -456,11 +470,9 @@ class TaskHandler(QueueHandler):
                     return await self._handle_task(task, message)
             # task not found on the current node
             # rejecting task
-            # info('rejecting task:', task.name)
+            info('rejecting task:', task.name)
             return await self._handle_rejected(task, message)
-        # task is either
-        # => on the block list or
-        # => not registered on the current node
+        # task is on the block list
         # return None to indicate no next task should be scheduled
         return None
 
@@ -471,6 +483,33 @@ class TaskHandler(QueueHandler):
         task = TaskRunner(name, callback, self.namespace)
         task.task_repeat_on_timeout = repeat_on_timeout
         self.registered_tasks[name] = task
+        self.add_schedule_task_shortcut(name, callback)
+        debug(f"registered task:{name}")
+
+    def add_schedule_task_shortcut(self, name, callback):
+        """
+        Add a function to the registered function nameed .s()
+        to schedule the function with or without arguments
+        """
+        async def schedule_task(*args, **kwargs):
+            debug(f"schedule_task: {name}")
+            if (args and len(args) > 0):
+                # create kwargs from args
+                # get keywords from registered callback function
+                keywords = signature(callback).parameters
+                # create dict from args
+                kwargs_args = dict(zip(keywords, args))
+                # add kwargs to kwargs_args
+                kwargs.update(kwargs_args)
+            task = Task(name=name, arguments=kwargs)
+            task.set_parent_task(self._current_task)
+            debug(f"scheduled task:{task.json()}")
+            self._can_be_marked_as_stopped = False
+            coroutine = self.send_to_queue(task, self.rabbitmq)
+            ensure_future(coroutine, loop=self.client_pool.loop)
+
+        setattr(callback, 's', schedule_task)
+        return schedule_task
 
     def task_set_redis_client(self, redis_client: RedisClient):
         for task_name in self.registered_tasks:
@@ -478,8 +517,8 @@ class TaskHandler(QueueHandler):
             task_runner.namespace = self.namespace
             task_runner.set_redis_client(redis_client)
 
-    def scale(self, worker_count: int = 1):
+    async def scale(self, worker_count: int = 1):
         """
         Set the worker count
         """
-        self.rabbitmq.scale(worker_count)
+        await self.rabbitmq.scale(worker_count)

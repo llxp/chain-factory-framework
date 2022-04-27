@@ -63,7 +63,7 @@ wait_queue = getenv('WAIT_QUEUE', 'wait_queue')
 incoming_blocked_queue = getenv(
     'INCOMING_BLOCKED_QUEUE', 'incoming_blocked_queue')
 wait_blocked_queue = getenv('WAIT_BLOCKED_QUEUE', 'wait_blocked_queue')
-namespace = getenv('NAMESPACE', 'root')
+namespace = getenv('NAMESPACE', 'test01')
 namespace_key = getenv('NAMESPACE_KEY', '')
 # maximum time in seconds a task can run, until it will be aborted
 task_timeout = getenv('TASK_TIMEOUT', None)

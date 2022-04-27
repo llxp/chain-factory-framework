@@ -21,7 +21,7 @@ class ListHandler:
         """
         decoded = body.decode("utf-8")
         # the from_json method comes from the dataclass_json decorator
-        return ListItemContainer.from_json(decoded)
+        return ListItemContainer.parse_raw(decoded)
 
     async def clear(self):
         """

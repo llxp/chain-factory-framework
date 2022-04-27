@@ -1,155 +1,22 @@
-from typing import Callable, Dict, Any, Union
+from typing import Dict, Any
 from json import dumps
 from logging import error, info, debug, exception, warning
 from traceback import print_exc
 from sys import stdout
 from time import sleep, time
-from stdio_proxy import redirect_stdout, redirect_stderr
 from io import BytesIO
 from threading import Lock
-from asyncio import run as run_asyncio
 
 from .models.mongodb_models import Task
-from .models.redis_models import TaskControlMessage
-from .wrapper.interruptable_thread import (
-    InterruptableThread, ThreadAbortException
-)
+from .wrapper.interruptable_thread import ThreadAbortException
 from .wrapper.redis_client import RedisClient
 from .common.task_return_type import \
     ArgumentType, CallbackType, \
     TaskRunnerReturnType, TaskReturnType, \
     NormalizedTaskReturnType
-from .common.settings import \
-    task_control_channel_redis_key
-
-
-class TaskThread(InterruptableThread):
-    """
-    The thread which actually runs the task
-    the output of stdio will be redirected to a buffer
-    and later uploaded to the mongodb database
-    """
-
-    def __init__(self, callback, arguments, buffer):
-        InterruptableThread.__init__(self)
-        self.callback = callback
-        self.arguments = arguments
-        # self.result: TaskRunnerReturnType = None
-        # current task status
-        # 0 means not run
-        # 1 means started
-        # 2 means finished
-        # 3 means stopped
-        # 4 means aborted
-        self.status = 0
-        self.buffer = buffer
-
-    def run(self):
-        # redirect stdout and stderr to the buffer
-        with \
-            redirect_stdout(self.buffer), \
-                redirect_stderr(self.buffer):
-            try:
-                self.status = 1
-                self.result = run_asyncio(self.callback(**self.arguments))
-                self.status = 2
-            # catch ThreadAbortException,
-            # will be raised if the thread should be forcefully aborted
-            except ThreadAbortException as e:
-                exception(e)
-                self.result = ThreadAbortException
-                self.status = 3
-                return
-            # catch all exceptions to prevent a crash of the node
-            except Exception as e:
-                exception(e)
-                print_exc(file=stdout)
-                self.result = Exception
-                self.status = 2
-                return
-
-    def stop(self):
-        self.status = 3
-        self.result = KeyboardInterrupt
-        super().interrupt()
-        super().exit()
-
-    def abort(self):
-        self.result = ThreadAbortException
-        self.status = 4
-        super().abort()
-
-    def abort_timeout(self):
-        self.result = TimeoutError
-        self.status = 5
-        super().abort()
-
-
-class ControlThread(InterruptableThread):
-    def __init__(
-        self,
-        workflow_id: str,
-        control_actions: Dict[str, Callable],
-        redis_client: RedisClient,
-        control_channel: str,
-        thread_name: str = ''
-    ):
-        InterruptableThread.__init__(self)
-        self.workflow_id = workflow_id
-        self.control_actions = control_actions
-        self.redis_client = redis_client
-        self.control_channel = control_channel
-        self.run_thread = True
-        self.thread_name = thread_name
-        info(self.control_channel)
-
-    def stop(self):
-        self.run_thread = False
-
-    def run(self):
-        try:
-            self.redis_client.subscribe(self.control_channel)
-            while self.run_thread:
-                msg = self.redis_client.get_message()
-                if msg is not None:
-                    info(msg)
-                    if self._control_task_thread_handle_channel(msg):
-                        break
-                sleep(0.001)
-            self.redis_client._pubsub_connection.unsubscribe(
-                self.control_channel)
-        except ThreadAbortException:
-            return
-
-    def _control_task_thread_handle_channel(
-        self,
-        msg: Union[None, Dict]
-    ):
-        try:
-            if self._control_task_thread_handle_data(msg):
-                return True
-        except Exception as e:
-            exception(e)
-            print_exc(file=stdout)
-            return True
-        return False
-
-    def _control_task_thread_handle_data(
-        self,
-        msg: Union[None, Dict]
-    ):
-        data = msg['data']
-        if type(data) == bytes:
-            decoded_data = data.decode('utf-8')
-            parsed_data = TaskControlMessage.parse_raw(decoded_data)
-            debug(parsed_data)
-            if parsed_data.workflow_id == self.workflow_id:
-                for command in self.control_actions:
-                    if parsed_data.command == command:
-                        debug('executing command', command)
-                        self.control_actions[command]()
-                        return True
-        return False
+from .common.settings import task_control_channel_redis_key
+from .task_thread import TaskThread
+from .control_thread import ControlThread
 
 
 class TaskControlThread(ControlThread):

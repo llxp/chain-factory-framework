@@ -11,6 +11,7 @@ from .queue_handler import QueueHandler
 from .common.settings import \
     max_task_age_wait_queue, wait_time, \
     wait_block_list_redis_key
+from .client_pool import ClientPool
 
 
 class WaitHandler(QueueHandler):
@@ -25,12 +26,14 @@ class WaitHandler(QueueHandler):
         queue_name: str,
         wait_queue_name: str,
         blocked_queue_name: str,
-        redis_client: RedisClient
+        redis_client: RedisClient,
+        client_pool: ClientPool,
     ):
         await QueueHandler.init(
             self,
             url=rabbitmq_url,
-            queue_name=wait_queue_name
+            queue_name=wait_queue_name,
+            client_pool=client_pool
         )
         self.node_name = node_name
         self.wait_queue_name = wait_queue_name
@@ -45,6 +48,7 @@ class WaitHandler(QueueHandler):
             rmq_type='publisher'
         )
         await self.amqp_blocked.init()
+        debug("WaitHandler init")
         self.block_list = ListHandler(
             list_name=wait_block_list_redis_key,
             redis_client=redis_client

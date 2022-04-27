@@ -36,7 +36,14 @@ class CredentialsRetriever():
 
     async def init(self):
         self.jwe_token = self.get_jwe_token(self.username, self.password)
-        self.credentials = self.get_credentials()
+        if (
+            self.jwe_token and
+            isinstance(self.jwe_token, dict) and
+            'access_token' in self.jwe_token
+        ):
+            self.credentials = self.get_credentials()
+            if self.credentials is None:
+                raise Exception('Credentials not found')
 
     @property
     def mongodb(self) -> str:
@@ -49,6 +56,11 @@ class CredentialsRetriever():
         return self.credentials.credentials.redis.url
 
     @property
+    def redis_prefix(self) -> str:
+        # get redis prefix from credentials
+        return self.credentials.credentials.redis.key_prefix
+
+    @property
     def rabbitmq(self) -> str:
         # get rabbitmq credentials from credentials
         return self.credentials.credentials.rabbitmq.url
@@ -56,10 +68,11 @@ class CredentialsRetriever():
     def get_jwe_token(self, username, password):
         # send login request to /api/login
         response = post(
-            url=self.endpoint + '/api/login',
+            url=self.endpoint + '/auth/login',
             data=dumps({
                 'username': username,
-                'password': password
+                'password': password,
+                'scopes': ['user']
             }),
             headers=self.headers
         )
@@ -68,12 +81,13 @@ class CredentialsRetriever():
 
     def get_credentials(self) -> ManagementCredentials:
         headers = {
-            'Authorization': 'Bearer {}'.format(self.jwe_token),
+            'Authorization': 'Bearer {}'.format(
+                self.jwe_token['access_token']['token']),
             'Content-Type': 'application/json'
         }
-        # send request to /api/orchestrator/credentials
+        # send request to /api/v1/credentials
         response = get(
-            url='{}/api/orchestrator/credentials?namespace={}&key={}'.format(
+            url='{}/api/v1/credentials?namespace={}&key={}'.format(
                 self.endpoint, self.namespace, self.key
             ),
             headers=headers

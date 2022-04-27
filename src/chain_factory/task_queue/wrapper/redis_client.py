@@ -1,10 +1,14 @@
+from asyncio import AbstractEventLoop, ensure_future, wait
+from logging import debug
 from aioredis.client import PubSub, Redis
-from aioredis.exceptions import ConnectionError, TimeoutError
+from aioredis.exceptions import ConnectionError
+# from aioredis.exceptions import TimeoutError
 from threading import Lock
-from typing import Dict, Any
-from ..decorators.repeat import repeat, repeat_async
+from typing import Dict, Any, List
+# from ..decorators.repeat import repeat
+# from ..decorators.repeat import repeat_async
 
-connection_pools: Dict[str, Redis] = {}
+connection_pools: Dict[str, List[Redis]] = {}
 
 
 class RedisClient():
@@ -15,12 +19,24 @@ class RedisClient():
     def __init__(
         self,
         redis_url: str,
+        key_prefix: str,
+        loop: AbstractEventLoop,
     ):
+        debug(f"RedisClient: {redis_url}")
+        self.loop = loop
         self._connection: Redis = self._get_connection(
             redis_url=redis_url,
         )
+        self._key_prefix = key_prefix
         self._pubsub_connection: PubSub = self._get_pubsub_connection()
         self.mutex = Lock()
+
+    @property
+    def key_prefix(self):
+        return self._key_prefix
+
+    def prefixed(self, key):
+        return f"{self.key_prefix}_{key}"
 
     def _get_connection(
         self,
@@ -30,14 +46,17 @@ class RedisClient():
         Create a new connection, if not already found in the connection pool
         """
         global connection_pools
+        client = self._connect(redis_url)
         if (redis_url not in connection_pools):
-            connection_pools[redis_url] = self._connect(redis_url)
-        return connection_pools[redis_url]
+            connection_pools[redis_url] = [client]
+        else:
+            connection_pools[redis_url].append(client)
+        return client
 
     def _get_pubsub_connection(self):
         return self._connection.pubsub()
 
-    @repeat((ConnectionError, TimeoutError), None, 10)
+    # @repeat((ConnectionError, TimeoutError), None, 10)
     def _connect(
         self,
         redis_url: str,
@@ -45,73 +64,137 @@ class RedisClient():
         return Redis.from_url(redis_url)
 
     async def close(self):
-        await self._connection.close()
-        await self._pubsub_connection.close()
+        # if (
+        #   self._pubsub_connection is not None and
+        #   self._pubsub_connection.subscribed
+        # ):
+        #     await self._pubsub_connection.close()
+        future = self._connection.close()
+        result = ensure_future(future, loop=self.loop)
+        await wait([result])
+        return result.result()
 
-    @repeat_async((ConnectionError, TimeoutError), False, 10)
+    # ((ConnectionError, TimeoutError), False, 10)
     async def set(self, name: str, obj):
-        return await self._connection.set(name, obj)
+        name = self.prefixed(name)
+        # print(f"RedisClient.set: {name}")
+        future = self._connection.set(name, obj)
+        result = ensure_future(future, loop=self.loop)
+        await wait([result])
+        return result.result()
 
-    @repeat_async((ConnectionError, TimeoutError), None, 10)
+    # @repeat_async((ConnectionError, TimeoutError), None, 10)
     async def get(self, name: str):
-        return await self._connection.get(name)
+        name = self.prefixed(name)
+        future = self._connection.get(name)
+        result = ensure_future(future, loop=self.loop)
+        await wait([result])
+        result1 = result.result()
+        return result1
 
-    @repeat_async((ConnectionError, TimeoutError), None, 10)
+    # @repeat_async((ConnectionError, TimeoutError), None, 10)
     async def lpush(self, name: str, obj):
-        return await self._connection.lpush(name, obj)
+        name = self.prefixed(name)
+        future = self._connection.lpush(name, obj)
+        result = ensure_future(future, loop=self.loop)
+        await wait([result])
+        return result.result()
 
-    @repeat_async((ConnectionError, TimeoutError), None, 10)
+    # @repeat_async((ConnectionError, TimeoutError), None, 10)
     async def rpush(self, name: str, obj):
-        return await self._connection.rpush(name, obj)
+        name = self.prefixed(name)
+        future = self._connection.rpush(name, obj)
+        result = ensure_future(future, loop=self.loop)
+        await wait([result])
+        return result.result()
 
-    @repeat_async((ConnectionError, TimeoutError), None, 10)
+    # @repeat_async((ConnectionError, TimeoutError), None, 10)
     async def lpop(self, name: str):
-        return await self._connection.lpop(name)
+        name = self.prefixed(name)
+        future = self._connection.lpop(name)
+        result = ensure_future(future, loop=self.loop)
+        await wait([result])
+        return result.result()
 
-    @repeat_async((ConnectionError, TimeoutError), None, 10)
+    # @repeat_async((ConnectionError, TimeoutError), None, 10)
     async def lrem(self, name: str, obj):
-        return await self._connection.lrem(name, 1, obj)
+        name = self.prefixed(name)
+        future = self._connection.lrem(name, 1, obj)
+        result = ensure_future(future, loop=self.loop)
+        await wait([result])
+        return result.result()
 
-    @repeat_async((ConnectionError, TimeoutError), None, 10)
+    # @repeat_async((ConnectionError, TimeoutError), None, 10)
     async def lindex_rem(self, name: str, index: int):
-        await self.lset(name, index, 'DELETED')
-        return await self.lrem(name, 'DELETED')
+        name = self.prefixed(name)
+        future1 = self.lset(name, index, 'DELETED')
+        future2 = self.lrem(name, 'DELETED')
+        result1 = ensure_future(future1, loop=self.loop)
+        result2 = ensure_future(future2, loop=self.loop)
+        await wait([result1])
+        await wait([result2])
+        return result2.result()
 
-    @repeat_async((ConnectionError, TimeoutError), None, 10)
+    # @repeat_async((ConnectionError, TimeoutError), None, 10)
     async def lindex_obj(self, name: str, index: int, json_model: Any):
-        redis_bytes = await self.lindex(name, index)
+        name = self.prefixed(name)
+        future = self.lindex(name, index)
+        result = ensure_future(future, loop=self.loop)
+        await wait([result])
+        redis_bytes = result.result()
         if redis_bytes is not None:
             redis_decoded = redis_bytes.decode('utf-8')
-            return json_model.from_json(redis_decoded)
-        return json_model.from_json('{}')
+            return json_model.parse_raw(redis_decoded)
+        return json_model.parse_raw('{}')
 
-    @repeat_async((ConnectionError, TimeoutError), None, 10)
+    # @repeat_async((ConnectionError, TimeoutError), None, 10)
     async def lindex(self, name: str, index: int) -> bytes:
-        return await self._connection.lindex(name, index)
+        name = self.prefixed(name)
+        future = self._connection.lindex(name, index)
+        result = ensure_future(future, loop=self.loop)
+        await wait([result])
+        return result.result()
 
-    @repeat_async((ConnectionError, TimeoutError), None, 10)
+    # @repeat_async((ConnectionError, TimeoutError), None, 10)
     async def llen(self, name: str):
-        return await self._connection.llen(name)
+        name = self.prefixed(name)
+        future = self._connection.llen(name)
+        result = ensure_future(future, loop=self.loop)
+        await wait([result])
+        return result.result()
 
-    @repeat_async((ConnectionError, TimeoutError), None, 10)
+    # @repeat_async((ConnectionError, TimeoutError), None, 10)
     async def lset(self, name: str, index: int, obj):
-        return await self._connection.lset(name, index, obj)
+        name = self.prefixed(name)
+        future = self._connection.lset(name, index, obj)
+        result = ensure_future(future, loop=self.loop)
+        await wait([result])
+        return result.result()
 
     async def subscribe(self, channel: str):
-        return await self._pubsub_connection.subscribe(channel)
+        future = self._pubsub_connection.subscribe(channel)
+        # result = ensure_future(future, loop=self.loop)
+        # await wait([result], loop=self.loop)
+        # return result.result()
+        return await future
 
     async def listen(self):
-        return await self._pubsub_connection.listen()
+        future = self._pubsub_connection.listen()
+        result = ensure_future(future, loop=self.loop)
+        await wait([result])
+        return result.result()
 
     async def get_message(self):
         try:
             self.mutex.acquire()
-            return await self._pubsub_connection.get_message(
+            future = self._pubsub_connection.get_message(
                 ignore_subscribe_messages=True)
+            return await future
         except ConnectionError:
             return None
         finally:
             self.mutex.release()
 
     async def publish(self, channel: str, obj):
+        channel = self.prefixed(channel)
         return self._connection.publish(channel, obj)

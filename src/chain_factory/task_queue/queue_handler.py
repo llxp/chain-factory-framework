@@ -9,6 +9,7 @@ from aio_pika.exceptions import AMQPConnectionError
 from .wrapper.rabbitmq import RabbitMQ, Message
 from .models.mongodb_models import Task
 from .decorators.parse_catcher import parse_catcher
+from .client_pool import ClientPool
 
 
 class QueueHandler:
@@ -18,27 +19,36 @@ class QueueHandler:
     async def init(
         self,
         url: str,
-        queue_name: str
+        queue_name: str,
+        client_pool: ClientPool,
     ):
         """
         Separate init logic to be able to use lazy initialisation
         """
         self.queue_name = queue_name
-        await self._connect(url=url)
+        await self._connect(client_pool=client_pool, url=url)
 
     def stop_listening(self):
-        self.rabbitmq.stop_callback()
+        if self.rabbitmq:
+            self.rabbitmq.stop_callback()
 
-    async def _connect(self, url: str):
+    async def _connect(self, client_pool: ClientPool, url: str):
         """
         Connects to rabbitmq
         """
         try:
+            # self.rabbitmq = await client_pool.rabbitmq_client(
+            #     rabbitmq_url=url,
+            #     rmq_type="consumer",
+            #     queue_name=self.queue_name,
+            #     on_message=self._on_message
+            # )
             self.rabbitmq: RabbitMQ = RabbitMQ(
                 url=url,
                 queue_name=self.queue_name,
                 rmq_type="consumer",
                 callback=self._on_message,
+                loop=client_pool.loop
             )
             await self.rabbitmq.init()
         except AMQPConnectionError:
