@@ -162,12 +162,10 @@ class RabbitMQ:
                 # another task has been returned to be scheduled
                 send_future = self.send(result)
                 ensure_future(send_future, loop=self.loop)
-                debug(
-                    "sent task to same queue, because result is %s" % result)
+                debug("sent task to same queue, because result is %s" % result)
             else:
                 # self.nack(new_message)
-                debug(
-                    "invoked registered callback method, result is None")
+                debug("invoked registered callback method, result is None")
 
     async def ack(self, message: Message):
         """
@@ -180,15 +178,13 @@ class RabbitMQ:
         Nacks/Rejects the specified message
         """
         # traceback.print_stack()
-        await message.message.nack(
-            delivery_tag=message.delivery_tag, requeue=True)
+        await message.message.nack(requeue=True)
 
     async def reject(self, message: Message):
         """
         Rejects the specified message
         """
-        message.message.reject(
-            delivery_tag=message.delivery_tag, requeue=True)
+        message.message.reject(requeue=True)
 
     async def listen(self):
         """
