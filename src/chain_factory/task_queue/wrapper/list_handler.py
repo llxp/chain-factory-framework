@@ -1,6 +1,6 @@
-from .wrapper.redis_client import RedisClient
-from .models.list_item_container import ListItem, ListItemContainer
-from .decorators.parse_catcher import parse_catcher
+from .redis_client import RedisClient
+from ..models.list_item_container import ListItem, ListItemContainer
+from ..decorators.parse_catcher import parse_catcher
 
 
 class ListHandler:

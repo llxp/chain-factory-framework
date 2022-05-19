@@ -4,7 +4,7 @@ from logging import info, warning, debug
 from .wrapper.rabbitmq import RabbitMQ, Message
 from .wrapper.redis_client import RedisClient
 from .models.mongodb_models import Task
-from .list_handler import ListHandler
+from .wrapper.list_handler import ListHandler
 from .queue_handler import QueueHandler
 from .common.settings import wait_time
 from .client_pool import ClientPool

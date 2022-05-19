@@ -71,7 +71,11 @@ class ClientPool():
         """
         returns a new redis client object
         """
-        return RedisClient(redis_url=redis_url, key_prefix=key_prefix, loop=self.loop)
+        return RedisClient(
+            redis_url=redis_url,
+            key_prefix=key_prefix,
+            loop=self.loop
+        )
 
     async def _init_rabbitmq(
         self,
@@ -151,7 +155,9 @@ class ClientPool():
         for redis_client in self.redis_clients.values():
             if redis_client:
                 await redis_client.close()
-        await self.mongodb_client.close()
+        if self.mongodb_client:
+            await self.mongodb_client.close()
         for rabbitmq_client in self.rabbitmq_clients.values():
             rabbitmq_client.stop_callback()
-            await rabbitmq_client.close()
+            if rabbitmq_client:
+                await rabbitmq_client.close()

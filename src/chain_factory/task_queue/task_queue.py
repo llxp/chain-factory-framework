@@ -1,8 +1,5 @@
-from functools import wraps
 from typing import Dict
 from asyncio import AbstractEventLoop, new_event_loop
-from inspect import signature
-from logging import debug
 
 from .credentials_pool import CredentialsPool
 from .task_starter import TaskStarter
@@ -16,7 +13,6 @@ from .common.settings import \
     namespace_key as default_namespace_key
 from .common.generate_random_id import generate_random_id
 from .credentials_retriever import CredentialsRetriever
-from .models.mongodb_models import Task
 
 
 class TaskQueue():

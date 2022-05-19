@@ -29,7 +29,7 @@ class TrashHandler(QueueHandler):
             queue_name=self.queue_name,
         )
 
-    def on_task(self, task: Task, message: Message) -> Union[None, Task]:
+    async def on_task(self, task: Task, message: Message) -> Union[None, Task]:
         task_json = task.json()
         debug(task_json)
         ns = self.namespace + '_' if self.namespace else ''

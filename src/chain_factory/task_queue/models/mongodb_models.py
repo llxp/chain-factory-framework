@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Union
 from odmantic import AIOEngine, EmbeddedModel, Model, Field
 
 from ..common.generate_random_id import generate_random_id
@@ -35,7 +35,7 @@ class Task(EmbeddedModel):
     # required, name of task to start
     name: str
     # required, arguments of task to start
-    arguments: Dict[str, str] = {}
+    arguments: Dict[str, Union[str, list, dict]] = {}
     # not required, will be overritten by the task_handler
     received_date: Optional[datetime] = Field(default_factory=datetime.utcnow)
     # not required, should be omitted, when starting a new task

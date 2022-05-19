@@ -1,4 +1,4 @@
-from typing import Dict, Union, Callable, List, Tuple
+from typing import Dict, Union, Callable, List
 from datetime import datetime
 from time import sleep
 from logging import info, debug, warning, error
@@ -8,7 +8,7 @@ from inspect import signature
 from asyncio import ensure_future
 
 from .task_runner import TaskRunner
-from .list_handler import ListHandler
+from .wrapper.list_handler import ListHandler
 from .queue_handler import QueueHandler
 from .client_pool import ClientPool
 from .argument_excluder import ArgumentExcluder
@@ -457,20 +457,24 @@ class TaskHandler(QueueHandler):
 
         Returns either None or a new task
         """
+        debug("on_task")
         if task_rejected := await self.check_rejected_task(task, message):
+            debug("task_rejected")
             return task_rejected
 
         if not await self._check_blocklist(task, message):
+            debug("task_blocked")
             # task is not on the block list
             # reset reject_counter when task has been accepted
             task.reject_counter = 0
             # iterate through list of all registered tasks
             for registered_task in self.registered_tasks:
+                debug("registered_task: " + registered_task)
                 if registered_task == task.name:
                     return await self._handle_task(task, message)
             # task not found on the current node
             # rejecting task
-            info('rejecting task:', task.name)
+            info(f"rejecting task: {task.name}")
             return await self._handle_rejected(task, message)
         # task is on the block list
         # return None to indicate no next task should be scheduled
