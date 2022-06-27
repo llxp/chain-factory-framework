@@ -143,6 +143,7 @@ class TaskQueue():
         self.task_queue_handlers.node_name = self.node_name
         self.task_queue_handlers.task_timeout = self.task_timeout
         self.task_queue_handlers.namespace_key = self.namespace_key
+        self.task_queue_handlers.node_name = self.node_name
 
     def run(self):
         try:

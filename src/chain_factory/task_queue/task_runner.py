@@ -36,10 +36,8 @@ class TaskControlThread(ControlThread):
         def abort():
             warning('aborting task')
             self.task_thread.abort()
-        control_channel = (
-            ((namespace + '_') if namespace else '') +
-            task_control_channel_redis_key
-        )
+        namespace_ = (namespace + '_') if namespace else ''
+        control_channel = namespace_ + task_control_channel_redis_key
         ControlThread.__init__(
             self,
             workflow_id=workflow_id,
@@ -86,7 +84,7 @@ class TaskRunner():
                 f"running task function {self.name} "
                 f"with arguments {dumps(arguments)}"
             )
-            info(workflow_id)
+            info(f"running task with workflow_id: {workflow_id}")
             if arguments is None:
                 arguments = dict()
             # self.convert_arguments could raise a TypeError
@@ -107,13 +105,13 @@ class TaskRunner():
                 )
                 task_control_thread.start()
                 self._control_task_thread(workflow_id)
-                # task_control_thread.abort()
             except ThreadAbortException:
                 pass
+
             if self.task_threads[workflow_id].status == 2:
                 # wait for task thread to normally exit
                 self.task_threads[workflow_id].join()
-                info('task finished')
+                info(f"task with workflow id {workflow_id} finished")
             else:
                 warning('task aborted or stopped')
             with TaskRunner.lock:

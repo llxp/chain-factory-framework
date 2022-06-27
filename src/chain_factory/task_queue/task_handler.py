@@ -182,9 +182,11 @@ class TaskHandler(QueueHandler):
         # run the task
         self._current_task = task
         self._can_be_marked_as_stopped = True
+        info(f"running task '{task.name}' with task_id '{task.task_id}'")
         result = await self.registered_tasks[task.name].run(
             task.arguments, task.workflow_id, log_buffer
         )
+        info(f"task '{task.name}' with task_id {task.task_id} finished")
         return result
 
     def _new_task_from_result(
@@ -463,7 +465,7 @@ class TaskHandler(QueueHandler):
             return task_rejected
 
         if not await self._check_blocklist(task, message):
-            debug("task_blocked")
+            debug("task not blocked")
             # task is not on the block list
             # reset reject_counter when task has been accepted
             task.reject_counter = 0

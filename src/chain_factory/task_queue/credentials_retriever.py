@@ -44,6 +44,8 @@ class CredentialsRetriever():
             self.credentials = self.get_credentials()
             if self.credentials is None:
                 raise Exception('Credentials not found')
+        else:
+            raise Exception('Token not valid')
 
     @property
     def mongodb(self) -> str:
@@ -77,7 +79,9 @@ class CredentialsRetriever():
             headers=self.headers
         )
         # get jwe token from response
-        return response.json()
+        if response.status_code == 200:
+            return response.json()
+        return None
 
     def get_credentials(self) -> ManagementCredentials:
         headers = {

@@ -27,7 +27,7 @@ class ControlThread(InterruptableThread):
         self.control_channel = control_channel
         self.run_thread = True
         self.thread_name = thread_name
-        info(self.control_channel)
+        debug(self.control_channel)
 
     def stop(self):
         self.run_thread = False
