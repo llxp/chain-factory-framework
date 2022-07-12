@@ -42,6 +42,7 @@ class WaitHandler(QueueHandler):
             queue_name=queue_name,
             rmq_type='publisher'
         )
+        await self.rabbitmq_task_queue.init()
         self.amqp_blocked: RabbitMQ = RabbitMQ(
             url=rabbitmq_url,
             queue_name=blocked_queue_name,
