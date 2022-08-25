@@ -13,19 +13,19 @@ from os import getenv
 
 
 # seconds to wait between each queue fetch
-wait_time = getenv('WAIT_TIME', 5)
+wait_time = int(getenv('WAIT_TIME', 60))
 # how many tasks should be prefetched by amqp library
-prefetch_count = getenv('PREFETCH_COUNT', 1)
+prefetch_count = int(getenv('PREFETCH_COUNT', 1))
 # number of threads to listen on the queue
-worker_count = 10
+worker_count = int(getenv('WORKER_COUNT', 1))
 # when should a waiting task be put back to the main/task queue (in seconds)
-max_task_age_wait_queue: int = getenv('MAX_TASK_AGE_WAIT_QUEUE', 60)
+max_task_age_wait_queue: int = int(getenv('MAX_TASK_AGE_WAIT_QUEUE', 60))
 # if sticky_tasks option is set,
 # # only execute the full workflow on the node it started on
 sticky_tasks = getenv('STICKY_TASKS', False)
 # number of times a task can be rejected,
 # until it will be put on the wait queue
-reject_limit = getenv('REJECT_LIMIT', 10)
+reject_limit = int(getenv('REJECT_LIMIT', 10))
 # performs a check, if the current node name already exists
 # throws an exception, if this option is set and the current node name
 # is already registered
@@ -45,7 +45,7 @@ task_status_redis_key = getenv('TASK_STATUS_REDIS_KEY', 'task_status')
 # redis key, which should be updated
 heartbeat_redis_key = getenv('HEARTBEAT_REDIS_KEY', 'heartbeat')
 # wait time between each update (in seocnds)
-heartbeat_sleep_time: int = getenv('HEARTBEAT_SLEEP_TIME', 1)
+heartbeat_sleep_time: int = int(getenv('HEARTBEAT_SLEEP_TIME', 1))
 # redis key, which should hold the block list for the normal block list
 incoming_block_list_redis_key = getenv(
     'INCOMING_BLOCK_LIST_REDIS_KEY', 'incoming_block_list')

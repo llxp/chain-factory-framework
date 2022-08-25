@@ -31,9 +31,7 @@ class TaskThread(InterruptableThread):
 
     def run(self):
         # redirect stdout and stderr to the buffer
-        with \
-            redirect_stdout(self.buffer), \
-                redirect_stderr(self.buffer):
+        with redirect_stdout(self.buffer), redirect_stderr(self.buffer):
             try:
                 self.status = 1
                 self.result = run_asyncio(self.callback(**self.arguments))

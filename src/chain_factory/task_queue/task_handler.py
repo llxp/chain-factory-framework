@@ -34,6 +34,9 @@ from .models.mongodb_models import (
 )
 
 
+wait_time = int(wait_time)
+
+
 class TaskHandler(QueueHandler):
     def __init__(
         self,
@@ -467,12 +470,12 @@ class TaskHandler(QueueHandler):
         if not await self._check_blocklist(task, message):
             debug("task not blocked")
             # task is not on the block list
-            # reset reject_counter when task has been accepted
-            task.reject_counter = 0
             # iterate through list of all registered tasks
             for registered_task in self.registered_tasks:
                 debug("registered_task: " + registered_task)
                 if registered_task == task.name:
+                    # reset reject_counter when task has been accepted
+                    task.reject_counter = 0
                     return await self._handle_task(task, message)
             # task not found on the current node
             # rejecting task
@@ -494,7 +497,7 @@ class TaskHandler(QueueHandler):
 
     def add_schedule_task_shortcut(self, name, callback):
         """
-        Add a function to the registered function nameed .s()
+        Add a function to the registered function named .s()
         to schedule the function with or without arguments
         """
         async def schedule_task(*args, **kwargs):

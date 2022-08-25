@@ -1,3 +1,4 @@
+from logging import info
 from typing import Dict
 from .credentials_retriever import CredentialsRetriever
 
@@ -23,6 +24,7 @@ class CredentialsPool:
 
     async def init(self):
         for namespace in self.namespaces:
+            info(f"Initialising credentials for {namespace}")
             await self.get_credentials(namespace, self.namespaces[namespace])
 
     async def get_credentials(

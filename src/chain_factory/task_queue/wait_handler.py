@@ -13,6 +13,9 @@ from .common.settings import \
     wait_block_list_redis_key
 from .client_pool import ClientPool
 
+wait_time = int(wait_time)
+max_task_age_wait_queue = int(max_task_age_wait_queue)
+
 
 class WaitHandler(QueueHandler):
     def __init__(self):
@@ -72,8 +75,15 @@ class WaitHandler(QueueHandler):
             return True
         for blocklist_item in blocklist.list_items:
             if (
-                blocklist_item.content == task_name and
-                blocklist_item.name == self.node_name
+                (
+                    blocklist_item.content == task_name or
+                    blocklist_item.content == '*'
+                )
+                and
+                (
+                    blocklist_item.name == self.node_name or
+                    blocklist_item.name == '*'
+                )
             ):
                 # reschedule task, which is in incoming block list
                 info('task %s is on block list...' % task_name)
@@ -106,9 +116,7 @@ class WaitHandler(QueueHandler):
             if current_task_age < max_task_age:
                 # task is older then max_task_age
                 # reschedule the task to the task_queue
-                info(
-                    'reschedulung task to queue: %s' % self.queue_name
-                )
+                info('reschedulung task to queue: %s' % self.queue_name)  # noqa: E501
                 await self._send_to_task_queue(task, message)
             else:
                 await self._reject(message)

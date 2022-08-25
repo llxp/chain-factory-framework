@@ -91,7 +91,7 @@ class CredentialsRetriever():
         }
         # send request to /api/v1/credentials
         response = get(
-            url='{}/api/v1/credentials?namespace={}&key={}'.format(
+            url='{}/api/v1/namespaces/{}/credentials?key={}'.format(
                 self.endpoint, self.namespace, self.key
             ),
             headers=headers

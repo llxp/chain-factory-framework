@@ -71,8 +71,11 @@ class RedisClient():
         #     await self._pubsub_connection.close()
         future = self._connection.close()
         result = ensure_future(future, loop=self.loop)
-        await wait([result])
-        return result.result()
+        try:
+            await wait([result])
+            return result.result()
+        except ValueError:
+            return None
 
     # ((ConnectionError, TimeoutError), False, 10)
     async def set(self, name: str, obj):
@@ -80,17 +83,23 @@ class RedisClient():
         # print(f"RedisClient.set: {name}")
         future = self._connection.set(name, obj)
         result = ensure_future(future, loop=self.loop)
-        await wait([result])
-        return result.result()
+        try:
+            await wait([result])
+            return result.result()
+        except ValueError:
+            return None
 
     # @repeat_async((ConnectionError, TimeoutError), None, 10)
     async def get(self, name: str):
         name = self.prefixed(name)
         future = self._connection.get(name)
         result = ensure_future(future, loop=self.loop)
-        await wait([result])
-        result1 = result.result()
-        return result1
+        try:
+            await wait([result])
+            result1 = result.result()
+            return result1
+        except ValueError:
+            return None
 
     # @repeat_async((ConnectionError, TimeoutError), None, 10)
     async def lpush(self, name: str, obj):
