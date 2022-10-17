@@ -10,45 +10,12 @@ from threading import Lock
 from .models.mongodb_models import Task
 from .wrapper.interruptable_thread import ThreadAbortException
 from .wrapper.redis_client import RedisClient
-from .common.task_return_type import \
-    ArgumentType, CallbackType, \
-    TaskRunnerReturnType, TaskReturnType, \
-    NormalizedTaskReturnType
-from .common.settings import task_control_channel_redis_key
+from .common.task_return_type import (
+    ArgumentType, CallbackType, TaskRunnerReturnType,
+    TaskReturnType, NormalizedTaskReturnType
+)
 from .task_thread import TaskThread
-from .control_thread import ControlThread
-
-
-class TaskControlThread(ControlThread):
-    def __init__(
-        self,
-        workflow_id: str,
-        task_thread: TaskThread,
-        redis_client: RedisClient,
-        namespace: str
-    ):
-        self.task_thread = task_thread
-
-        def stop():
-            warning('stopping task')
-            self.task_thread.stop()
-
-        def abort():
-            warning('aborting task')
-            self.task_thread.abort()
-        namespace_ = (namespace + '_') if namespace else ''
-        control_channel = namespace_ + task_control_channel_redis_key
-        ControlThread.__init__(
-            self,
-            workflow_id=workflow_id,
-            control_actions={
-                'stop': stop,
-                'abort': self.task_thread.abort
-            },
-            redis_client=redis_client,
-            control_channel=control_channel,
-            thread_name='TaskControlThread'
-        )
+from .task_control_thread import TaskControlThread
 
 
 class TaskRunner():
@@ -113,7 +80,7 @@ class TaskRunner():
                 self.task_threads[workflow_id].join()
                 info(f"task with workflow id {workflow_id} finished")
             else:
-                warning('task aborted or stopped')
+                warning("task aborted or stopped")
             with TaskRunner.lock:
                 task_result = self.task_threads[workflow_id].result
                 del self.task_threads[workflow_id]

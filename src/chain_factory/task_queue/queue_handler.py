@@ -1,4 +1,5 @@
 from abc import abstractmethod
+from asyncio import AbstractEventLoop
 from datetime import datetime
 from logging import error, debug
 from traceback import print_exc
@@ -6,50 +7,32 @@ from sys import exit, stderr
 from typing import Union
 from aio_pika.exceptions import AMQPConnectionError
 
-from .wrapper.rabbitmq import RabbitMQ, Message
+from .wrapper.rabbitmq import RabbitMQ, Message, getConsumer
 from .models.mongodb_models import Task
 from .decorators.parse_catcher import parse_catcher
-from .client_pool import ClientPool
 
 
 class QueueHandler:
     def __init__(self):
         self.rabbitmq: RabbitMQ = None
 
-    async def init(
-        self,
-        url: str,
-        queue_name: str,
-        client_pool: ClientPool,
-    ):
+    async def init(self, url: str, queue_name: str, loop: AbstractEventLoop):
         """
         Separate init logic to be able to use lazy initialisation
         """
         self.queue_name = queue_name
-        await self._connect(client_pool=client_pool, url=url)
+        await self._connect(url=url, loop=loop)
 
     def stop_listening(self):
         if self.rabbitmq:
             self.rabbitmq.stop_callback()
 
-    async def _connect(self, client_pool: ClientPool, url: str):
+    async def _connect(self, url: str, loop: AbstractEventLoop):
         """
         Connects to rabbitmq
         """
         try:
-            # self.rabbitmq = await client_pool.rabbitmq_client(
-            #     rabbitmq_url=url,
-            #     rmq_type="consumer",
-            #     queue_name=self.queue_name,
-            #     on_message=self._on_message
-            # )
-            self.rabbitmq: RabbitMQ = RabbitMQ(
-                url=url,
-                queue_name=self.queue_name,
-                rmq_type="consumer",
-                callback=self._on_message,
-                loop=client_pool.loop
-            )
+            self.rabbitmq: RabbitMQ = getConsumer(rabbitmq_url=url, queue_name=self.queue_name, callback=self._on_message, loop=loop)  # noqa: E501
             await self.rabbitmq.init()
         except AMQPConnectionError:
             print_exc(file=stderr)
@@ -118,15 +101,11 @@ class QueueHandler:
         debug("callback_impl in queue_handler called")
         # parse the message body to Task
         task: Task = self._parse_json(body=message.body)
-        debug(
-            "task: %s" % task.json() if task is not None else "None")
+        task_json = task.json() if task is not None else "None"
+        debug(f"task: {task_json}")
         return await self._on_message_check_task(task, message)
 
-    async def _on_message_check_task(
-        self,
-        task: Union[Task, None],
-        message: Message
-    ):
+    async def _on_message_check_task(self, task: Union[Task, None], message: Message):  # noqa: E501
         if task is not None and len(task.name) > 0:
             return await self._on_task(task=task, message=message)
         else:
@@ -158,7 +137,7 @@ class QueueHandler:
 
     def _on_task_result(self, result: Task):
         result_json = result.json()
-        debug("result: %s" % result_json)
+        debug(f"result: {result_json}")
         # return the result as json to the queue
         return result_json
 
@@ -171,5 +150,5 @@ class QueueHandler:
         will be invoked,
         when an error occured during parsing the message to a task
         """
-        error("Error, message is not parsable. Body: %s" % message.body)
+        error(f"Error, message is not parsable. Body: {message.body}")
         return ""

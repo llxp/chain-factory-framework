@@ -14,7 +14,7 @@ class TrashHandler(QueueHandler):
         rabbitmq_url: str,
         redis_url: str,
         namespace: str = None,
-        redis_key: str = 'trash_queue_output'
+        redis_key: str = "trash_queue_output"
     ):
         super().__init__(self)
         self.rabbitmq_url = rabbitmq_url
@@ -32,5 +32,5 @@ class TrashHandler(QueueHandler):
     async def on_task(self, task: Task, message: Message) -> Union[None, Task]:
         task_json = task.json()
         debug(task_json)
-        ns = self.namespace + '_' if self.namespace else ''
+        ns = self.namespace + "_" if self.namespace else ""
         self.redis_client.rpush(ns + self.redis_key, task_json)

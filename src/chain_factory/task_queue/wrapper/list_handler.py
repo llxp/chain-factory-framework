@@ -13,7 +13,7 @@ class ListHandler:
         self.redis_client = redis_client
 
     @parse_catcher((AttributeError, TypeError, Exception))
-    async def parse_json(self, body) -> ListItemContainer:
+    async def parse_json(self, body: bytes) -> ListItemContainer:
         """
         Decode the redis data to a utf-8 string,
         parse the string to json and
@@ -30,10 +30,7 @@ class ListHandler:
         if self.redis_client is not None:
             list_item_container = ListItemContainer()
             # the from_json method comes from the dataclass_json decorator
-            return await self.redis_client.set(
-                self.list_name,
-                list_item_container.json()
-            )
+            return await self.redis_client.set(self.list_name, list_item_container.json())  # noqa: E501
         return False
 
     async def init(self):
@@ -45,8 +42,7 @@ class ListHandler:
             current_list = await self.get()
             if current_list is None:
                 list_item_container = ListItemContainer()
-                await self.redis_client.set(
-                    self.list_name, list_item_container.json())
+                await self.redis_client.set(self.list_name, list_item_container.json())  # noqa: E501
 
     async def add(self, list_item: ListItem) -> bool:
         """
@@ -62,8 +58,7 @@ class ListHandler:
                 current_list.list_items.append(list_item)
             else:
                 return False
-            return await self.redis_client.set(
-                self.list_name, current_list.json())
+            return await self.redis_client.set(self.list_name, current_list.json())  # noqa: E501
         return False
 
     async def remove(self, list_item: ListItem) -> bool:

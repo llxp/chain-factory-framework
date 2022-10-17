@@ -28,8 +28,8 @@ class BytesIOWrapper(BytesIO):
 
     def write(self, b: Union[bytes, bytearray]):
         if task_log_to_stdout:
-            __stdout__.write(b.decode('utf-8'))
-        decoded_log_line = b.decode('utf-8')
+            __stdout__.write(b.decode("utf-8"))
+        decoded_log_line = b.decode("utf-8")
         decoded_log_line = self.remove_secrets(decoded_log_line)
         task_log = Log(
             task_id=self.task_id,
@@ -40,9 +40,7 @@ class BytesIOWrapper(BytesIO):
             # dataclass to json and parse to dict
             coroutine = self.mongodb_database.save(task_log)
             ensure_future(coroutine, loop=self.loop)
-            # loop.call_soon_threadsafe(functools.partial(
-            # self.mongodb_database.save, (task_log, )))
         return super().write(b)
 
     def remove_secrets(self, string: str) -> str:
-        return sub('<s>(.*?)</s>', 'REDACTED', string)
+        return sub("<s>(.*?)</s>", "REDACTED", string)

@@ -3,8 +3,8 @@ from pydantic import BaseModel
 
 
 class ListItem(BaseModel):
-    name: str = ''
-    content: str = ''
+    name: str = ""
+    content: str = ""
     delete: Optional[bool] = False
 
 

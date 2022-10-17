@@ -1,13 +1,13 @@
+from asyncio import AbstractEventLoop
 from time import sleep
 from logging import info, warning, debug
 
-from .wrapper.rabbitmq import RabbitMQ, Message
+from .wrapper.rabbitmq import RabbitMQ, Message, getPublisher
 from .wrapper.redis_client import RedisClient
 from .models.mongodb_models import Task
 from .wrapper.list_handler import ListHandler
 from .queue_handler import QueueHandler
 from .common.settings import wait_time
-from .client_pool import ClientPool
 
 wait_time = int(wait_time)
 
@@ -30,25 +30,13 @@ class BlockedHandler(QueueHandler):
         blocked_queue_name: str,
         block_list_name: str,
         redis_client: RedisClient,
-        client_pool: ClientPool,
+        loop: AbstractEventLoop
     ):
-        await QueueHandler.init(
-            self,
-            url=rabbitmq_url,
-            queue_name=blocked_queue_name,
-            client_pool=client_pool,
-        )
+        await QueueHandler.init(self, url=rabbitmq_url, queue_name=blocked_queue_name, loop=loop)  # noqa: E501
         self.node_name = node_name
-        self.rabbitmq_sender_task_queue: RabbitMQ = RabbitMQ(
-            url=rabbitmq_url,
-            queue_name=task_queue_name,
-            rmq_type='publisher'
-        )
+        self.rabbitmq_sender_task_queue: RabbitMQ = getPublisher(rabbitmq_url=rabbitmq_url, queue_name=task_queue_name)  # noqa: E501
         await self.rabbitmq_sender_task_queue.init()
-        self.block_list = ListHandler(
-            list_name=block_list_name,
-            redis_client=redis_client
-        )
+        self.block_list = ListHandler(list_name=block_list_name, redis_client=redis_client)  # noqa: E501
         await self.block_list.init()
 
     async def _check_blocklist(self, task: Task, message: Message) -> bool:
@@ -63,35 +51,18 @@ class BlockedHandler(QueueHandler):
             blocklist is None
             or (blocklist is not None and blocklist.list_items is None)
         ):
-            warning(
-                'blocklist \'%s\' couldn\'t be retrieved from redis. '
-                'Reschedulung task \'%s\' to queue \'%s\''
-                % self.block_list.list_name, task_name, self.queue_name
-            )
+            warning(f"blocklist '{self.block_list.list_name}' couldn't be retrieved from redis. Reschedulung task '{task_name}' to queue '{self.queue_name}'")  # noqa: E501
             await self.reschedule(message)
             sleep(wait_time)
             return True
         for blocklist_item in blocklist.list_items:
-            if (
-                (
-                    blocklist_item.content == task_name or
-                    blocklist_item.content == '*'
-                )
-                and
-                (
-                    blocklist_item.name == self.node_name or
-                    blocklist_item.name == '*'
-                )
-            ):
-                debug(
-                    'BlockedHandler:_check_blocklist: '
-                    'task %s is in blocklist' % task_name
-                )
+            if blocklist_item.content in [task_name, "*"] and blocklist_item.name in [self.node_name, "*"]:  # noqa: E501
+                debug(f"BlockedHandler:_check_blocklist: task {task_name} is in blocklist")  # noqa: E501
                 if blocklist_item.delete:
-                    info('task is marked for deletion. deleting/discarding task.')  # noqa: E501
+                    info("task is marked for deletion. deleting/discarding task.")  # noqa: E501
                     return None
                 # reschedule task, which is in block list
-                info('waiting: task %s is not on block list...' % task_name)
+                info(f"waiting: task {task_name} is not on block list...")
                 await self.reschedule(message)
                 sleep(wait_time)
                 return None
@@ -110,9 +81,9 @@ class BlockedHandler(QueueHandler):
         debug("sent back to task queue")
 
     async def on_task(self, task: Task, message: Message) -> Task:
-        debug('BlockedHandler:on_task: queue_name: ' + self.queue_name)
+        debug("BlockedHandler:on_task: queue_name: " + self.queue_name)
         if task is not None and len(task.name):
             return await self._check_blocklist(task, message)
         else:
-            debug('task is empty. discarding task.')
+            debug("task is empty. discarding task.")
             return None

@@ -1,23 +1,21 @@
-from asyncio import (
-    AbstractEventLoop, get_event_loop, new_event_loop
-)
-# from concurrent.futures import ProcessPoolExecutor
+from asyncio import AbstractEventLoop, get_event_loop, new_event_loop  # noqa: E501
 from dataclasses import dataclass
 from logging import debug, error, info
 from traceback import print_exc
 from sys import stdout
-from typing import Callable, Dict, Any, Union, List
-from ssl import SSLContext
+from typing import Callable, Dict, Any, Union
 from _thread import interrupt_main
 from _thread import start_new_thread
 from aio_pika import (
     Queue, connect_robust,
-    IncomingMessage, Message as AioPikaMessage
+    IncomingMessage, Message as AioPikaMessage,
+    DeliveryMode, RobustQueue, Channel
 )
 from aio_pika.connection import ConnectionType
-from aio_pika.channel import Channel
-from aio_pika.robust_queue import RobustQueue
-from aio_pika.exceptions import AMQPConnectionError, AMQPChannelError
+from aio_pika.exceptions import (
+    AMQPConnectionError, AMQPChannelError,
+    ChannelInvalidStateError, DuplicateConsumerTag
+)
 from asyncio import ensure_future
 
 from ..common.settings import prefetch_count
@@ -28,12 +26,6 @@ class Message():
     body: str
     message: IncomingMessage
     delivery_tag: int
-
-
-@dataclass
-class SSLOptions():
-    context: SSLContext
-    server_hostname: str
 
 
 class RabbitMQ:
@@ -52,33 +44,28 @@ class RabbitMQ:
         self.url = url
         self.queue_options = queue_options
         self.loop = loop
-
-    async def init(self):
-        self.connection: ConnectionType = await RabbitMQ._connect(
-            self.url, loop=self.loop)
-        self.consumer_list: List(_Consumer) = []
-        # await self.scale()
-        if self.rmq_type == "consumer":
-            self._consumer = _Consumer(self.connection, self.queue_name)
-            await self._consumer.init()
-        self.sender_channel: _Consumer = _Consumer(
-            self.connection, self.queue_name, self.queue_options)
-        await self.sender_channel.init()
         self.acked = []
         self.nacked = []
 
-    def __enter__(self):
-        """
-        Needed for the 'with' clause to work
-        """
-        return self
+    async def init(self):
+        self.connection: ConnectionType = await RabbitMQ._connect(self.url, loop=self.loop)  # noqa: E501
+        if self.rmq_type == "consumer":
+            await self.init_consumer()
+        await self.init_sender()
 
-    def __exit__(self, exc_type, exc_value, traceback):
+    async def init_consumer(self):
         """
-        Needed for the 'with clause to work',
-        closes the connection, when the with clause's scope gets out of scope
+        Initializes a new consumer
         """
-        self.close()
+        self._consumer = _Consumer(self.connection, self.queue_name)
+        await self._consumer.init()
+
+    async def init_sender(self):
+        """
+        Initializes the sender channel
+        """
+        self.sender_channel: _Consumer = _Consumer(self.connection, self.queue_name, self.queue_options)  # noqa: E501
+        await self.sender_channel.init()
 
     def stop_callback(self):
         self.callback = None
@@ -89,9 +76,6 @@ class RabbitMQ:
         """
         self.callback = None
         await self._consumer.close()
-        # consumer: _Consumer = None
-        # for consumer in self.consumer_list:
-        #     await consumer.close()
         await self.connection.close()
 
     @staticmethod
@@ -102,11 +86,11 @@ class RabbitMQ:
         """
         Connects to an rabbitmq server
         """
-        debug("opening new RabbitMQ to host %s" % url)
+        debug(f"opening new RabbitMQ to host {url}")
         if not loop:
             loop = get_event_loop()
         connection = await connect_robust(url, timeout=5, loop=loop)
-        debug("opened new RabbitMQ to host %s" % url)
+        debug(f"opened new RabbitMQ to host {url}")
         return connection
 
     @staticmethod
@@ -132,13 +116,11 @@ class RabbitMQ:
         everytime a new message is consumed by the pika/rabbitmq library
         """
         async with message.process(ignore_processed=True):
-            debug("body: %s" % message.body)
+            debug(f"body: {message.body}")
             if len(message.body) <= 0:
                 await message.ack()  # ignore empty messages
                 return
-            new_message: Message = Message(
-                message.body, message, message.delivery_tag
-            )
+            new_message: Message = Message(message.body, message, message.delivery_tag)  # noqa: E501
             if self.callback is not None:
                 debug("invoking registered callback method")
                 await self._start_callback(new_message)
@@ -161,10 +143,9 @@ class RabbitMQ:
             if result is not None and len(result) > 0:
                 # another task has been returned to be scheduled
                 send_future = self.send(result)
-                ensure_future(send_future, loop=self.loop)
-                debug("sent task to same queue, because result is %s" % result)
+                await ensure_future(send_future, loop=self.loop)
+                debug(f"sent task to same queue, because result is {result}")
             else:
-                # self.nack(new_message)
                 debug("invoked registered callback method, result is None")
 
     async def ack(self, message: Message):
@@ -177,7 +158,6 @@ class RabbitMQ:
         """
         Nacks/Rejects the specified message
         """
-        # traceback.print_stack()
         await message.message.nack(requeue=True)
 
     async def reject(self, message: Message):
@@ -192,17 +172,8 @@ class RabbitMQ:
         """
         info(f"starting new consumer for queue {self.queue_name}")
         await self._start_consuming(self._consumer)
-        # i = 0
-        # executor = ProcessPoolExecutor(len(self.consumer_list))
-        # for consumer in self.consumer_list:
-        #     # start_new_thread(self._start_consuming, (consumer, ))
-        #     future = self._start_consuming
-        #     self.loop.run_in_executor(executor, future)
-        #     info("starting new consumer %d for queue %s" % (
-        #         i, self.queue_name))
-        #     i += 1
 
-    async def _start_consuming(self, consumer: '_Consumer' = None):
+    async def _start_consuming(self, consumer: "_Consumer" = None):
         try:
             await consumer.consume(self.callback_impl)
         except Exception:
@@ -210,74 +181,22 @@ class RabbitMQ:
             print_exc(file=stdout)
             interrupt_main()
 
-    async def scale(self, worker_count: int = 1):
-        """
-        Set the worker count
-        """
-        # used for consuming messages from the queue
-        # if self.rmq_type == "consumer":
-        #     await self._scale_consumer(worker_count)
-        # # used for publishing messages on the queue
-        # elif self.rmq_type == "publisher":
-        #     pass
-        pass
-
-    # async def _scale_consumer(self, worker_count: int):
-    #     if worker_count > len(self.consumer_list):
-    #         await self._scale_add_consumer(worker_count)
-    #     elif worker_count == len(self.consumer_list):
-    #         # requested worker count is the same
-    #         # as the current worker count
-    #         return
-    #     else:
-    #         await self._scale_remove_consumer(worker_count)
-    #     consumer: _Consumer = None
-    #     for consumer in self.consumer_list:
-    #         await consumer.consume(self.callback_impl)
-
-    # def _consumer_count(self):
-    #     return len(self.consumer_list)
-
-    # async def _scale_add_consumer(self, worker_count: int):
-    #     # how many need to be added
-    #     add_worker_count = worker_count - self._consumer_count()
-    #     debug("adding %d consumers" % add_worker_count)
-    #     for _ in range(0, add_worker_count):
-    #         new_consumer = _Consumer(self.connection, self.queue_name)
-    #         await new_consumer.init()
-    #         await self._add_consumer(new_consumer)
-    #     debug("added %d consumers" % len(self.consumer_list))
-
-    # async def _scale_remove_consumer(self, worker_count: int):
-    #     # how many need to be removed
-    #     remove_worker_count = self._consumer_count() - worker_count
-    #     for _ in range(0, remove_worker_count):
-    #         self._remove_last_consumer()
-
-    # async def _add_consumer(self, consumer: "_Consumer"):
-    #     self.consumer_list.append(consumer)
-
-    # def _remove_last_consumer(self):
-    #     existing_consumer: _Consumer = self.consumer_list.pop(-1)
-    #     existing_consumer.close()
-
     async def send(self, message: str) -> Union[bool, None]:
         """
         Publishes a new task on the queue
         """
         try:
             new_message = self._create_new_message(message)
-            return await self.sender_channel.channel.default_exchange.publish(
-                new_message, routing_key=self.queue_name)
-        except AMQPConnectionError:
+            return await self.sender_channel.channel.default_exchange.publish(new_message, routing_key=self.queue_name)  # noqa: E501
+        except (AMQPConnectionError, ChannelInvalidStateError, DuplicateConsumerTag):  # noqa: E501
             print_exc(file=stdout)
             interrupt_main()
 
     def _create_new_message(self, message: str):
         return AioPikaMessage(
-            body=message.encode('utf-8'),
+            body=message.encode("utf-8"),
             content_type="text/plain",
-            delivery_mode=2,
+            delivery_mode=DeliveryMode.PERSISTENT,
             headers={}
         )
 
@@ -325,11 +244,10 @@ class _Consumer:
         """
         Declare the specified queue
         """
-        debug("declaring queue %s" % self.queue_name)
-        queue = await self.channel.declare_queue(
-            name=self.queue_name, durable=True, arguments=queue_options
-        )
-        debug("declared queue %s" % self.queue_name)
+        queue_name = self.queue_name
+        debug(f"declaring queue {queue_name}")
+        queue = await self.channel.declare_queue(name=queue_name, durable=True, arguments=queue_options)  # noqa: E501
+        debug(f"declared queue {queue_name}")
         return queue
 
     async def consume(self, callback: Callable[[IncomingMessage], str]):
@@ -338,10 +256,7 @@ class _Consumer:
         """
         await self.channel.set_qos(prefetch_count=prefetch_count)
         await self.queue.consume(callback=callback)
-        info(
-            f"[{self.queue_name}] " +
-            "[*] Waiting for messages. To exit press CTRL+C"
-        )
+        info(f"[{self.queue_name}] [*] Waiting for messages. To exit press CTRL+C")  # noqa: E501
 
     async def close(self):
         """
@@ -349,7 +264,7 @@ class _Consumer:
         """
         try:
             await self.channel.close()
-        except (KeyError, AMQPConnectionError):
+        except (KeyError, AMQPConnectionError, ChannelInvalidStateError):
             pass
 
     async def message_count(self) -> int:
@@ -377,3 +292,11 @@ class _Consumer:
         """
         await self.delete_queue()
         self.queue = await self._declare_queue()
+
+
+def getPublisher(rabbitmq_url: str, queue_name: str, queue_options: Dict[str, Any] = None):  # noqa: E501
+    return RabbitMQ(url=rabbitmq_url, queue_name=queue_name, rmq_type="publisher", queue_options=queue_options)  # noqa: E501
+
+
+def getConsumer(rabbitmq_url: str, queue_name: str, callback: Callable[[Message], str], loop: AbstractEventLoop):  # noqa: E501
+    return RabbitMQ(url=rabbitmq_url, queue_name=queue_name, rmq_type="consumer", callback=callback, loop=loop)  # noqa: E501

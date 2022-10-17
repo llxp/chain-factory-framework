@@ -56,7 +56,6 @@ class RedisClient():
     def _get_pubsub_connection(self):
         return self._connection.pubsub()
 
-    # @repeat((ConnectionError, TimeoutError), None, 10)
     def _connect(
         self,
         redis_url: str,
@@ -64,11 +63,6 @@ class RedisClient():
         return Redis.from_url(redis_url)
 
     async def close(self):
-        # if (
-        #   self._pubsub_connection is not None and
-        #   self._pubsub_connection.subscribed
-        # ):
-        #     await self._pubsub_connection.close()
         future = self._connection.close()
         result = ensure_future(future, loop=self.loop)
         try:
@@ -77,10 +71,8 @@ class RedisClient():
         except ValueError:
             return None
 
-    # ((ConnectionError, TimeoutError), False, 10)
     async def set(self, name: str, obj):
         name = self.prefixed(name)
-        # print(f"RedisClient.set: {name}")
         future = self._connection.set(name, obj)
         result = ensure_future(future, loop=self.loop)
         try:
@@ -89,7 +81,6 @@ class RedisClient():
         except ValueError:
             return None
 
-    # @repeat_async((ConnectionError, TimeoutError), None, 10)
     async def get(self, name: str):
         name = self.prefixed(name)
         future = self._connection.get(name)
@@ -101,7 +92,6 @@ class RedisClient():
         except ValueError:
             return None
 
-    # @repeat_async((ConnectionError, TimeoutError), None, 10)
     async def lpush(self, name: str, obj):
         name = self.prefixed(name)
         future = self._connection.lpush(name, obj)
@@ -109,7 +99,6 @@ class RedisClient():
         await wait([result])
         return result.result()
 
-    # @repeat_async((ConnectionError, TimeoutError), None, 10)
     async def rpush(self, name: str, obj):
         name = self.prefixed(name)
         future = self._connection.rpush(name, obj)
@@ -117,7 +106,6 @@ class RedisClient():
         await wait([result])
         return result.result()
 
-    # @repeat_async((ConnectionError, TimeoutError), None, 10)
     async def lpop(self, name: str):
         name = self.prefixed(name)
         future = self._connection.lpop(name)
@@ -125,7 +113,6 @@ class RedisClient():
         await wait([result])
         return result.result()
 
-    # @repeat_async((ConnectionError, TimeoutError), None, 10)
     async def lrem(self, name: str, obj):
         name = self.prefixed(name)
         future = self._connection.lrem(name, 1, obj)
@@ -133,18 +120,16 @@ class RedisClient():
         await wait([result])
         return result.result()
 
-    # @repeat_async((ConnectionError, TimeoutError), None, 10)
     async def lindex_rem(self, name: str, index: int):
         name = self.prefixed(name)
-        future1 = self.lset(name, index, 'DELETED')
-        future2 = self.lrem(name, 'DELETED')
+        future1 = self.lset(name, index, "DELETED")
+        future2 = self.lrem(name, "DELETED")
         result1 = ensure_future(future1, loop=self.loop)
         result2 = ensure_future(future2, loop=self.loop)
         await wait([result1])
         await wait([result2])
         return result2.result()
 
-    # @repeat_async((ConnectionError, TimeoutError), None, 10)
     async def lindex_obj(self, name: str, index: int, json_model: Any):
         name = self.prefixed(name)
         future = self.lindex(name, index)
@@ -152,11 +137,10 @@ class RedisClient():
         await wait([result])
         redis_bytes = result.result()
         if redis_bytes is not None:
-            redis_decoded = redis_bytes.decode('utf-8')
+            redis_decoded = redis_bytes.decode("utf-8")
             return json_model.parse_raw(redis_decoded)
-        return json_model.parse_raw('{}')
+        return json_model.parse_raw("{}")
 
-    # @repeat_async((ConnectionError, TimeoutError), None, 10)
     async def lindex(self, name: str, index: int) -> bytes:
         name = self.prefixed(name)
         future = self._connection.lindex(name, index)
@@ -164,7 +148,6 @@ class RedisClient():
         await wait([result])
         return result.result()
 
-    # @repeat_async((ConnectionError, TimeoutError), None, 10)
     async def llen(self, name: str):
         name = self.prefixed(name)
         future = self._connection.llen(name)
@@ -172,7 +155,6 @@ class RedisClient():
         await wait([result])
         return result.result()
 
-    # @repeat_async((ConnectionError, TimeoutError), None, 10)
     async def lset(self, name: str, index: int, obj):
         name = self.prefixed(name)
         future = self._connection.lset(name, index, obj)
@@ -182,9 +164,6 @@ class RedisClient():
 
     async def subscribe(self, channel: str):
         future = self._pubsub_connection.subscribe(channel)
-        # result = ensure_future(future, loop=self.loop)
-        # await wait([result], loop=self.loop)
-        # return result.result()
         return await future
 
     async def listen(self):

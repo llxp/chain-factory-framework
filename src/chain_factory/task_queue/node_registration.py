@@ -1,4 +1,4 @@
-from inspect import signature
+from inspect import Signature, signature
 from typing import Callable, Dict, List
 
 from odmantic import AIOEngine
@@ -45,10 +45,7 @@ class NodeRegistration():
             await self.database.delete(node_registration)
 
     async def _raise_node_already_registered(self):
-        raise Exception(
-            'Existing node name found in redis list, exiting.\n'
-            'If this is intentional, set unique_hostnames to False'
-        )
+        raise Exception("Existing node name found in redis list, exiting.\nIf this is intentional, set unique_hostnames to False")  # noqa: E501
 
     async def _node_already_registered(self):
         return await self.database.find(NodeTasks, (
@@ -56,22 +53,19 @@ class NodeRegistration():
             (NodeTasks.namespace == self.namespace)
         ))
 
-    async def _task_arguments(self, function_signature):
+    async def _task_arguments(self, function_signature: Signature):
         """
         Get arguments from task function signature
         """
-        return [
-            obj for obj in list(function_signature.parameters)
-            if obj != 'self'
-        ]
+        return [obj for obj in list(function_signature.parameters) if obj != "self"]  # noqa: E501
 
-    async def _task_argument_types(self, function_signature):
+    async def _task_argument_types(self, function_signature: Signature):
         """
         Get argument types from task function signature
         """
         return [
             function_signature.parameters[d].annotation.__name__
-            if hasattr(function_signature.parameters[d].annotation, '__name__')
+            if hasattr(function_signature.parameters[d].annotation, "__name__")
             else str(function_signature.parameters[d].annotation)
             for d in function_signature.parameters
         ]
@@ -88,27 +82,19 @@ class NodeRegistration():
         function_signature = signature(callback)
         argument_names = await self._task_arguments(function_signature)
         argument_types = await self._task_argument_types(function_signature)
-        return RegisteredTask(
-            name=task_name,
-            arguments=dict(zip(argument_names, argument_types))
-        )
+        arguments = dict(zip(argument_names, argument_types))
+        return RegisteredTask(name=task_name, arguments=arguments)
 
     async def _node_tasks(self):
         """
         Get all registered tasks on this node
         """
-        task_runners: Dict[str, TaskRunner] = \
-            self.task_handler.registered_tasks
+        task_runners: Dict[str, TaskRunner] = self.task_handler.registered_tasks  # noqa: E501
         all_registered_tasks: List[RegisteredTask] = []
         for task_name in task_runners:
-            registered_task = await self._registered_task(
-                task_name, task_runners[task_name].callback)
+            registered_task = await self._registered_task(task_name, task_runners[task_name].callback)  # noqa: E501
             all_registered_tasks.append(registered_task)
-        return NodeTasks(
-            node_name=self.node_name,
-            namespace=self.namespace,
-            tasks=all_registered_tasks
-        )
+        return NodeTasks(node_name=self.node_name, namespace=self.namespace, tasks=all_registered_tasks)  # noqa: E501
 
     async def register(self):
         await self.register_tasks()

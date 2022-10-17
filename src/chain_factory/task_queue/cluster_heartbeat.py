@@ -43,14 +43,15 @@ class ClusterHeartbeat():
         return datetime.utcnow()
 
     def _redis_key(self):
-        return heartbeat_redis_key + '_' + self.node_name
+        return heartbeat_redis_key + "_" + self.node_name
 
     def _json_heartbeat(self):
-        return Heartbeat(
+        heartbeat = Heartbeat(
             node_name=self.node_name,
             namespace=self.namespace,
             last_time_seen=self._current_timestamp()
-        ).json()
+        )
+        return heartbeat.json()
 
     async def _set_heartbeat(self, redis_client: RedisClient):
         result = await redis_client.set(

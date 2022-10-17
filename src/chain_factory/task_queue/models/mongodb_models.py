@@ -13,7 +13,7 @@ class RegisteredTask(EmbeddedModel):
 
 class NodeTasks(Model):
     node_name: str
-    namespace: str
+    namespace: Optional[str] = None
     tasks: List[RegisteredTask] = []
 
 
@@ -28,7 +28,7 @@ class TaskStatus(Model):
     task_id: str
     namespace: str
     status: str
-    created_date: str
+    created_date: datetime = Field(default_factory=datetime.utcnow)
 
 
 class Task(EmbeddedModel):
@@ -39,11 +39,11 @@ class Task(EmbeddedModel):
     # not required, will be overritten by the task_handler
     received_date: Optional[datetime] = Field(default_factory=datetime.utcnow)
     # not required, should be omitted, when starting a new task
-    parent_task_id: Optional[str] = ''
+    parent_task_id: Optional[str] = ""
     # not required, should be omitted, when starting a new task
-    workflow_id: Optional[str] = ''
+    workflow_id: Optional[str] = ""
     # not required, will be overritten by the task_handler
-    task_id: Optional[str] = ''
+    task_id: Optional[str] = ""
     # a list of names the task can be started on.
     # Required, can be empty.
     # If empty it will be executed on any of the nodes
@@ -105,7 +105,7 @@ class Task(EmbeddedModel):
     def set_as_parent_task(self):
         self.parent_task_id = self.task_id
 
-    def set_parent_task(self, other_task: 'Task'):
+    def set_parent_task(self, other_task: "Task"):
         self.parent_task_id = other_task.task_id
         self.workflow_id = other_task.workflow_id
         self.node_names = other_task.node_names
@@ -142,3 +142,15 @@ class WorkflowStatus(Model):
     namespace: str
     status: str
     created_date: datetime = Field(default_factory=datetime.utcnow)
+
+    @classmethod
+    async def get(
+        cls: "WorkflowStatus",
+        mongodb_client: AIOEngine,
+        workflow_id: str,
+        namespace: str
+    ):
+        return await mongodb_client.find_one(cls, (
+            (cls.workflow_id == workflow_id) &
+            (cls.namespace == namespace)
+        ))

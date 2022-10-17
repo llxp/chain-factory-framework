@@ -32,16 +32,14 @@ class ClientPool():
         - initialises the redis client
         - initialises the mongodb client
         """
-        self.redis_clients['default'] = await self._init_redis(
-            redis_url, key_prefix)
-        self.mongodb_client: MongoDBClient = await self._init_mongodb(
-            mongodb_url)
+        self.redis_clients["default"] = await self._init_redis(redis_url, key_prefix)  # noqa: E501
+        self.mongodb_client: MongoDBClient = await self._init_mongodb(mongodb_url)  # noqa: E501
         self.loop = loop
 
     async def redis_client(
         self,
-        redis_url: str = 'default',
-        key_prefix: str = ''
+        redis_url: str = "default",
+        key_prefix: str = ""
     ) -> RedisClient:
         """
         return a redis client specific to the given redis url
@@ -77,50 +75,6 @@ class ClientPool():
             loop=self.loop
         )
 
-    async def _init_rabbitmq(
-        self,
-        rabbitmq_url: str,
-        rmq_type: str,
-        queue_name: str,
-        loop: AbstractEventLoop,
-        on_message_callback: callable = None,
-    ) -> RabbitMQ:
-        """
-        returns a new rabbitmq client object
-        """
-        client = RabbitMQ(
-            url=rabbitmq_url,
-            rmq_type=rmq_type,
-            queue_name=queue_name,
-            loop=loop,
-            callback=on_message_callback,
-        )
-        await client.init()
-        return client
-
-    async def rabbitmq_client(
-        self,
-        rabbitmq_url: str,
-        rmq_type: str,
-        queue_name: str,
-        on_message: callable = None,
-    ) -> RabbitMQ:
-        """
-        return a rabbitmq client specific to the given rabbitmq url
-        if no rabbitmq url is given, return the default rabbitmq client
-        if no default rabbitmq client exists,
-            create a new one with the given rabbitmq url
-        """
-        if rabbitmq_url not in self.rabbitmq_clients:
-            self.rabbitmq_clients[rabbitmq_url] = await self._init_rabbitmq(
-                rabbitmq_url=rabbitmq_url,
-                rmq_type=rmq_type,
-                queue_name=queue_name,
-                loop=self.loop,
-                on_message_callback=on_message,
-            )
-        return self.rabbitmq_clients[rabbitmq_url]
-
     async def _init_mongodb_collections(self, client: MongoDBClient):
         """
         initialises the mongodb collections
@@ -142,11 +96,11 @@ class ClientPool():
         except CollectionInvalid as e:
             warning(e)
         workflow_collection = motor_client.get_collection(Workflow)
-        await workflow_collection.create_index('workflow_id')
+        await workflow_collection.create_index("workflow_id")
         twa_collection = motor_client.get_collection(TaskWorkflowAssociation)
-        await twa_collection.create_index('workflow_id')
+        await twa_collection.create_index("workflow_id")
         log_collection = motor_client.get_collection(Log)
-        await log_collection.create_index('task_id')
+        await log_collection.create_index("task_id")
 
     async def close(self):
         """

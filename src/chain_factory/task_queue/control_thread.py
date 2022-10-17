@@ -18,7 +18,7 @@ class ControlThread(InterruptableThread):
         control_actions: Dict[str, Callable],
         redis_client: RedisClient,
         control_channel: str,
-        thread_name: str = ''
+        thread_name: str = ""
     ):
         InterruptableThread.__init__(self)
         self.workflow_id = workflow_id
@@ -51,10 +51,7 @@ class ControlThread(InterruptableThread):
         except ThreadAbortException:
             return
 
-    async def _control_task_thread_handle_channel(
-        self,
-        msg: Union[None, Dict]
-    ):
+    async def _control_task_thread_handle_channel(self, msg: Union[None, Dict]):  # noqa: E501
         try:
             if await self._control_task_thread_handle_data(msg):
                 return True
@@ -68,15 +65,15 @@ class ControlThread(InterruptableThread):
         self,
         msg: Union[None, Dict]
     ):
-        data: bytes = msg['data']
+        data: bytes = msg["data"]
         if type(data) == bytes:
-            decoded_data = data.decode('utf-8')
+            decoded_data = data.decode("utf-8")
             parsed_data = TaskControlMessage.parse_raw(decoded_data)
             debug(parsed_data)
             if parsed_data.workflow_id == self.workflow_id:
                 for command in self.control_actions:
                     if parsed_data.command == command:
-                        debug('executing command', command)
+                        debug(f"executing command: {command}")
                         self.control_actions[command]()
                         return True
         return False

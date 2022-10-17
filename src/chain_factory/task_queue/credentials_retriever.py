@@ -22,15 +22,13 @@ class CredentialsRetriever():
         self.namespace = namespace
         self.username = username
         self.password = password
-        self.mongodb_host = 'localhost'
+        self.mongodb_host = "localhost"
         self.mongodb_port = 27017
         self.headers = dict(
-            Accept='application/json',
-            ContentType='application/json'
+            Accept="application/json",
+            ContentType="application/json"
         )
-        self.extra_arguments = dict(
-            authSource='admin'
-        )
+        self.extra_arguments = dict(authSource="admin")
         self.key = key
         self.credentials = None
 
@@ -39,13 +37,13 @@ class CredentialsRetriever():
         if (
             self.jwe_token and
             isinstance(self.jwe_token, dict) and
-            'access_token' in self.jwe_token
+            "access_token" in self.jwe_token
         ):
             self.credentials = self.get_credentials()
             if self.credentials is None:
-                raise Exception('Credentials not found')
+                raise Exception("Credentials not found")
         else:
-            raise Exception('Token not valid')
+            raise Exception("Token not valid")
 
     @property
     def mongodb(self) -> str:
@@ -70,11 +68,11 @@ class CredentialsRetriever():
     def get_jwe_token(self, username, password):
         # send login request to /api/login
         response = post(
-            url=self.endpoint + '/auth/login',
+            url=self.endpoint + "/auth/login",
             data=dumps({
-                'username': username,
-                'password': password,
-                'scopes': ['user']
+                "username": username,
+                "password": password,
+                "scopes": ["user"]
             }),
             headers=self.headers
         )
@@ -84,18 +82,13 @@ class CredentialsRetriever():
         return None
 
     def get_credentials(self) -> ManagementCredentials:
+        token = self.jwe_token["access_token"]["token"]
         headers = {
-            'Authorization': 'Bearer {}'.format(
-                self.jwe_token['access_token']['token']),
-            'Content-Type': 'application/json'
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json"
         }
         # send request to /api/v1/credentials
-        response = get(
-            url='{}/api/v1/namespaces/{}/credentials?key={}'.format(
-                self.endpoint, self.namespace, self.key
-            ),
-            headers=headers
-        )
+        response = get(url=f"{self.endpoint}/api/v1/namespaces/{self.namespace}/credentials?key={self.key}", headers=headers)  # noqa: E501
         if response.status_code == 200:
             # get credentials from response
             return ManagementCredentials(**response.json())

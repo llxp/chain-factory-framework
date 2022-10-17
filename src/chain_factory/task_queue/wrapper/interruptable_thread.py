@@ -18,11 +18,11 @@ if __debug__:
     # noinspection PyShadowingBuiltins
     def _set_async_exc(id, exc):
         if not isinstance(id, int):
-            raise TypeError(f'{id!r} not an int instance')
+            raise TypeError(f"{id!r} not an int instance")
         if not isinstance(exc, type):
-            raise TypeError(f'{exc!r} not a type instance')
+            raise TypeError(f"{exc!r} not a type instance")
         if not issubclass(exc, BaseException):
-            raise SystemError(f'{exc!r} not a BaseException subclass')
+            raise SystemError(f"{exc!r} not a BaseException subclass")
         return _PyThreadState_SetAsyncExc(id, exc)
 else:
     _set_async_exc = _PyThreadState_SetAsyncExc

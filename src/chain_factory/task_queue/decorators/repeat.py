@@ -14,22 +14,22 @@ def repeat_async(
             # used to temporarily store the current error counter
             counter: int = -1
             try:
-                if 'repeat_counter' in kwargs:
-                    counter = kwargs['repeat_counter']
+                if "repeat_counter" in kwargs:
+                    counter = kwargs["repeat_counter"]
                     # delete the error counter from kwargs so,
                     # that the value is not visible
                     # in the actual decorated function
-                    del kwargs['repeat_counter']
+                    del kwargs["repeat_counter"]
                 return await func(*args, **kwargs)
             except errors as e:
                 exception(e)
                 if counter >= 0:
-                    kwargs['repeat_counter'] = counter  # restore error counter
-                if 'repeat_counter' in kwargs:
-                    kwargs['repeat_counter'] = kwargs['repeat_counter'] + 1
+                    kwargs["repeat_counter"] = counter  # restore error counter
+                if "repeat_counter" in kwargs:
+                    kwargs["repeat_counter"] = kwargs["repeat_counter"] + 1
                 else:
-                    kwargs['repeat_counter'] = 0
-                if kwargs['repeat_counter'] >= max_counter_value:
+                    kwargs["repeat_counter"] = 0
+                if kwargs["repeat_counter"] >= max_counter_value:
                     return on_error_return_value
                 return new_func(*args, **kwargs)
 
@@ -48,22 +48,22 @@ def repeat(
             # used to temporarily store the current error counter
             counter: int = -1
             try:
-                if 'repeat_counter' in kwargs:
-                    counter = kwargs['repeat_counter']
+                if "repeat_counter" in kwargs:
+                    counter = kwargs["repeat_counter"]
                     # delete the error counter from kwargs so,
                     # that the value is not visible
                     # in the actual decorated function
-                    del kwargs['repeat_counter']
+                    del kwargs["repeat_counter"]
                 return func(*args, **kwargs)
             except errors as e:
                 exception(e)
                 if counter >= 0:
-                    kwargs['repeat_counter'] = counter  # restore error counter
-                if 'repeat_counter' in kwargs:
-                    kwargs['repeat_counter'] = kwargs['repeat_counter'] + 1
+                    kwargs["repeat_counter"] = counter  # restore error counter
+                if "repeat_counter" in kwargs:
+                    kwargs["repeat_counter"] = kwargs["repeat_counter"] + 1
                 else:
-                    kwargs['repeat_counter'] = 0
-                if kwargs['repeat_counter'] >= max_counter_value:
+                    kwargs["repeat_counter"] = 0
+                if kwargs["repeat_counter"] >= max_counter_value:
                     return on_error_return_value
                 return new_func(*args, **kwargs)
 

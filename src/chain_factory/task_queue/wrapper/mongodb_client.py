@@ -16,7 +16,8 @@ class MongoDBClient():
     async def check_connection(self):
         try:
             # The ismaster command is cheap and does not require auth.
-            await self.client.client.admin.command('ismaster')
+            # check, if the connection is alive
+            await self.client.client.admin.command("ismaster")
         except ConnectionFailure:
             error("Mongodb Server not available")
             raise

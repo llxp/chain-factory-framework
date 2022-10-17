@@ -1,7 +1,6 @@
 from typing import Dict
 from asyncio import AbstractEventLoop, new_event_loop
 
-from .credentials_pool import CredentialsPool
 from .task_starter import TaskStarter
 from .task_queue_handlers import TaskQueueHandlers
 # import the settings
@@ -45,9 +44,6 @@ class TaskQueue():
         self.namespace_key = namespace_key
         # task starter
         self._task_starter: Dict[str, TaskStarter] = {}
-        # credentials pool
-        self._credentials_pool = CredentialsPool(
-            endpoint, username, password, {self.namespace: self.namespace_key})
         self.task_queue_handlers: TaskQueueHandlers = TaskQueueHandlers(
             namespace=self.namespace,
             namespace_key=self.namespace_key,
@@ -71,7 +67,7 @@ class TaskQueue():
         if namespace_key is None:
             namespace_key = self.namespace_key
         credentials: CredentialsRetriever = \
-            await self._credentials_pool.get_credentials(
+            await self.task_queue_handlers._credentials_pool.get_credentials(
                 namespace, namespace_key)
         rabbitmq_url = credentials.rabbitmq()
         try:
@@ -98,7 +94,7 @@ class TaskQueue():
 
     def task(
         self,
-        name: str = '',
+        name: str = "",
         repeat_on_timeout: bool = default_task_repeat_on_timeout
     ):
         """
@@ -119,7 +115,7 @@ class TaskQueue():
     def add_task(
         self,
         func,
-        name: str = '',
+        name: str = "",
         repeat_on_timeout: bool = default_task_repeat_on_timeout
     ):
         """
@@ -133,7 +129,6 @@ class TaskQueue():
         Initialises the queue and starts listening
         """
         self._update_task_queue_handlers(loop)
-        await self._credentials_pool.init()
         await self.task_queue_handlers.listen()
 
     def _update_task_queue_handlers(self, loop: AbstractEventLoop = None):
